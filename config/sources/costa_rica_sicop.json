@@ -1,0 +1,40 @@
+{
+  "source": "costa_rica_sicop",
+  "country_code": "CR",
+  "source_system": "SICOP Costa Rica",
+  "connector_version_env": "MIRA_CONNECTOR_VERSION",
+  "download": {
+    "type": "http_zip",
+    "url_template": "https://dlsaobservatorioprod.blob.core.windows.net/fs-synapse-observatorio-produccion/Zip/{period}.zip"
+  },
+  "files": {
+    "required": [
+      "DetalleCarteles.csv",
+      "ProcedimientoAdjudicacion.csv",
+      "InstitucionesRegistradas.csv",
+      "Proveedores.csv"
+    ],
+    "optional": [
+      "FechaPorEtapas.csv",
+      "Ofertas.csv",
+      "LineasOfertadas.csv",
+      "LineasAdjudicadas.csv",
+      "Contratos.csv",
+      "LineasContratadas.csv",
+      "OrdenPedido.csv",
+      "Recepciones.csv",
+      "LineasRecibidas.csv",
+      "Garantias.csv",
+      "RecursosObjecion.csv",
+      "SancionProveedores.csv",
+      "SistemaEvaluacionOfertas.csv"
+    ]
+  },
+  "csv": {
+    "default_delimiter": ";",
+    "delimiters": {
+      "SancionProveedores.csv": ","
+    },
+    "encoding": "utf-8-sig"
+  }
+}

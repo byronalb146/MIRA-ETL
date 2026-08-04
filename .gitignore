@@ -1,0 +1,25 @@
+# Local input files and generated analysis artifacts
+*.zip
+*.pdf
+*.docx
+.tmp_*/
+.tmp_*.txt
+.tools/
+
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# ETL local working directories
+data/
+downloads/
+extracts/
+logs/

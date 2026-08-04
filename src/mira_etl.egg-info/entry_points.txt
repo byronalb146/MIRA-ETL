@@ -1,0 +1,2 @@
+[console_scripts]
+mira-etl = mira_etl.cli:main
