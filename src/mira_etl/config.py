@@ -11,7 +11,7 @@ class SourceConfig:
     source: str
     country_code: str
     source_system: str
-    connector_version_env: str
+    connector_version: str
     download: dict[str, Any]
     files: dict[str, list[str]]
     csv: dict[str, Any]
@@ -26,6 +26,9 @@ class SourceConfig:
     def delimiter_for(self, filename: str) -> str:
         delimiters = self.csv.get("delimiters", {})
         return delimiters.get(filename, self.csv.get("default_delimiter", ";"))
+
+    def source_url_for_period(self, period: str) -> str:
+        return self.download["url_template"].format(period=period)
 
     @property
     def encoding(self) -> str:

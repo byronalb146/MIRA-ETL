@@ -24,9 +24,11 @@ CORE_SQL = """
         %(raw_payload)s::jsonb, %(raw_payload_hash)s, %(normalisation_status)s, %(normalised_at)s,
         %(data_quality_status)s, %(missing_fields)s::jsonb
     )
-    on conflict (source_system, source_record_id, raw_payload_hash)
+    on conflict (process_id)
     do update set
-        process_id = excluded.process_id,
+        country_code = excluded.country_code,
+        source_system = excluded.source_system,
+        source_record_id = excluded.source_record_id,
         source_url = excluded.source_url,
         extracted_at = excluded.extracted_at,
         source_last_modified_at = excluded.source_last_modified_at,
@@ -35,18 +37,17 @@ CORE_SQL = """
         normalisation_status = excluded.normalisation_status,
         normalised_at = excluded.normalised_at,
         data_quality_status = excluded.data_quality_status,
-        missing_fields = excluded.missing_fields,
-        updated_at = now()
+        missing_fields = excluded.missing_fields
 """
 
 PROCESS_DETAIL_SQL = """
     insert into mart.procurement_process_details (
-        record_id, process_number, title, description, procurement_method,
+        process_id, process_number, title, description, procurement_method,
         process_status, source_status, publication_date, closing_date,
-        award_date, estimated_amount, currency_code
+        award_date, estimated_amount, awarded_amount, currency_code
     )
-    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    on conflict (record_id) do update set
+    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    on conflict (process_id) do update set
         process_number = excluded.process_number,
         title = excluded.title,
         description = excluded.description,
@@ -57,15 +58,16 @@ PROCESS_DETAIL_SQL = """
         closing_date = excluded.closing_date,
         award_date = excluded.award_date,
         estimated_amount = excluded.estimated_amount,
+        awarded_amount = excluded.awarded_amount,
         currency_code = excluded.currency_code
 """
 
 BUYER_DETAIL_SQL = """
     insert into mart.procurement_buyer_details (
-        record_id, buyer_name, buyer_id_source, buyer_tax_id
+        process_id, buyer_name, buyer_id_source, buyer_tax_id
     )
     values (%s, %s, %s, %s)
-    on conflict (record_id) do update set
+    on conflict (process_id) do update set
         buyer_name = excluded.buyer_name,
         buyer_id_source = excluded.buyer_id_source,
         buyer_tax_id = excluded.buyer_tax_id
@@ -73,33 +75,22 @@ BUYER_DETAIL_SQL = """
 
 SUPPLIER_DETAIL_SQL = """
     insert into mart.procurement_supplier_details (
-        record_id, supplier_name, supplier_id_source, supplier_tax_id, supplier_type
+        process_id, supplier_name, supplier_id_source, supplier_tax_id, supplier_type
     )
     values (%s, %s, %s, %s, %s)
-    on conflict (record_id) do update set
+    on conflict (process_id) do update set
         supplier_name = excluded.supplier_name,
         supplier_id_source = excluded.supplier_id_source,
         supplier_tax_id = excluded.supplier_tax_id,
         supplier_type = excluded.supplier_type
 """
 
-AWARD_DETAIL_SQL = """
-    insert into mart.procurement_award_details (
-        record_id, awarded_amount, currency_code, award_date
-    )
-    values (%s, %s, %s, %s)
-    on conflict (record_id) do update set
-        awarded_amount = excluded.awarded_amount,
-        currency_code = excluded.currency_code,
-        award_date = excluded.award_date
-"""
-
 ITEM_DETAIL_SQL = """
     insert into mart.procurement_item_details (
-        record_id, item_description, category_source, category_normalised
+        process_id, item_description, category_source, category_normalised
     )
     values (%s, %s, %s, %s)
-    on conflict (record_id) do update set
+    on conflict (process_id) do update set
         item_description = excluded.item_description,
         category_source = excluded.category_source,
         category_normalised = excluded.category_normalised
@@ -278,20 +269,17 @@ class Database:
             return 0
 
         self.upsert_record_core_batch(record_list)
-        record_ids = self.fetch_record_ids(record_list)
 
         process_rows = []
         buyer_rows = []
         supplier_rows = []
-        award_rows = []
         item_rows = []
 
         for record in record_list:
-            key = (record["source_system"], record["source_record_id"], record["raw_payload_hash"])
-            record_id = record_ids[key]
+            process_id = record["process_id"]
             process_rows.append(
                 (
-                    record_id,
+                    process_id,
                     record.get("process_number"),
                     record.get("title"),
                     record.get("description"),
@@ -302,25 +290,25 @@ class Database:
                     record.get("closing_date"),
                     record.get("award_date"),
                     record.get("estimated_amount"),
+                    record.get("awarded_amount"),
                     record.get("currency_code"),
                 )
             )
             buyer_rows.append(
-                (record_id, record.get("buyer_name"), record.get("buyer_id_source"), record.get("buyer_tax_id"))
+                (process_id, record.get("buyer_name"), record.get("buyer_id_source"), record.get("buyer_tax_id"))
             )
             supplier_rows.append(
                 (
-                    record_id,
+                    process_id,
                     record.get("supplier_name"),
                     record.get("supplier_id_source"),
                     record.get("supplier_tax_id"),
                     record.get("supplier_type"),
                 )
             )
-            award_rows.append((record_id, record.get("awarded_amount"), record.get("currency_code"), record.get("award_date")))
             item_rows.append(
                 (
-                    record_id,
+                    process_id,
                     record.get("item_description"),
                     record.get("category_source"),
                     record.get("category_normalised"),
@@ -331,7 +319,6 @@ class Database:
             cur.executemany(PROCESS_DETAIL_SQL, process_rows)
             cur.executemany(BUYER_DETAIL_SQL, buyer_rows)
             cur.executemany(SUPPLIER_DETAIL_SQL, supplier_rows)
-            cur.executemany(AWARD_DETAIL_SQL, award_rows)
             cur.executemany(ITEM_DETAIL_SQL, item_rows)
 
         return len(record_list)
@@ -347,221 +334,6 @@ class Database:
         ]
         with self.conn.cursor() as cur:
             cur.executemany(CORE_SQL, rows)
-
-    def fetch_record_ids(self, records: list[dict[str, Any]]) -> dict[tuple[str, str, str], int]:
-        keys = sorted({(record["source_system"], record["source_record_id"], record["raw_payload_hash"]) for record in records})
-        result: dict[tuple[str, str, str], int] = {}
-        chunk_size = 500
-
-        with self.conn.cursor() as cur:
-            for start in range(0, len(keys), chunk_size):
-                chunk = keys[start : start + chunk_size]
-                placeholders = ",".join(["(%s, %s, %s)"] * len(chunk))
-                params = [part for key in chunk for part in key]
-                cur.execute(
-                    f"""
-                    select record_id, source_system, source_record_id, raw_payload_hash
-                    from mart.procurement_record_core
-                    where (source_system, source_record_id, raw_payload_hash) in ({placeholders})
-                    """,
-                    params,
-                )
-                for row in cur.fetchall():
-                    result[(row["source_system"], row["source_record_id"], row["raw_payload_hash"])] = int(row["record_id"])
-
-        return result
-
-    def upsert_record_core(self, record: dict[str, Any]) -> int:
-        row = self.fetch_one(
-            """
-            insert into mart.procurement_record_core (
-                process_id, country_code, source_system, source_record_id, source_url,
-                extracted_at, source_last_modified_at, connector_version,
-                raw_payload, raw_payload_hash, normalisation_status, normalised_at,
-                data_quality_status, missing_fields
-            )
-            values (
-                %(process_id)s, %(country_code)s, %(source_system)s, %(source_record_id)s, %(source_url)s,
-                %(extracted_at)s, %(source_last_modified_at)s, %(connector_version)s,
-                %(raw_payload)s::jsonb, %(raw_payload_hash)s, %(normalisation_status)s, %(normalised_at)s,
-                %(data_quality_status)s, %(missing_fields)s::jsonb
-            )
-            on conflict (source_system, source_record_id, raw_payload_hash)
-            do update set
-                process_id = excluded.process_id,
-                source_url = excluded.source_url,
-                extracted_at = excluded.extracted_at,
-                source_last_modified_at = excluded.source_last_modified_at,
-                connector_version = excluded.connector_version,
-                raw_payload = excluded.raw_payload,
-                normalisation_status = excluded.normalisation_status,
-                normalised_at = excluded.normalised_at,
-                data_quality_status = excluded.data_quality_status,
-                missing_fields = excluded.missing_fields,
-                updated_at = now()
-            returning record_id
-            """,
-            {
-                **record,
-                "raw_payload": json.dumps(record["raw_payload"], ensure_ascii=False, default=str),
-                "missing_fields": json.dumps(record["missing_fields"], ensure_ascii=False, default=str),
-            },
-        )
-        assert row is not None
-        return int(row["record_id"])
-
-    def upsert_process_details(self, record_id: int, record: dict[str, Any]) -> None:
-        self.execute(
-            """
-            insert into mart.procurement_process_details (
-                record_id, process_number, title, description, procurement_method,
-                process_status, source_status, publication_date, closing_date,
-                award_date, estimated_amount, currency_code
-            )
-            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            on conflict (record_id) do update set
-                process_number = excluded.process_number,
-                title = excluded.title,
-                description = excluded.description,
-                procurement_method = excluded.procurement_method,
-                process_status = excluded.process_status,
-                source_status = excluded.source_status,
-                publication_date = excluded.publication_date,
-                closing_date = excluded.closing_date,
-                award_date = excluded.award_date,
-                estimated_amount = excluded.estimated_amount,
-                currency_code = excluded.currency_code
-            """,
-            (
-                record_id,
-                record.get("process_number"),
-                record.get("title"),
-                record.get("description"),
-                record.get("procurement_method"),
-                record.get("process_status"),
-                record.get("source_status"),
-                record.get("publication_date"),
-                record.get("closing_date"),
-                record.get("award_date"),
-                record.get("estimated_amount"),
-                record.get("currency_code"),
-            ),
-        )
-
-    def upsert_buyer_details(self, record_id: int, record: dict[str, Any]) -> None:
-        self.execute(
-            """
-            insert into mart.procurement_buyer_details (
-                record_id, buyer_name, buyer_id_source, buyer_tax_id
-            )
-            values (%s, %s, %s, %s)
-            on conflict (record_id) do update set
-                buyer_name = excluded.buyer_name,
-                buyer_id_source = excluded.buyer_id_source,
-                buyer_tax_id = excluded.buyer_tax_id
-            """,
-            (record_id, record.get("buyer_name"), record.get("buyer_id_source"), record.get("buyer_tax_id")),
-        )
-
-    def upsert_supplier_details(self, record_id: int, record: dict[str, Any]) -> None:
-        self.execute(
-            """
-            insert into mart.procurement_supplier_details (
-                record_id, supplier_name, supplier_id_source, supplier_tax_id, supplier_type
-            )
-            values (%s, %s, %s, %s, %s)
-            on conflict (record_id) do update set
-                supplier_name = excluded.supplier_name,
-                supplier_id_source = excluded.supplier_id_source,
-                supplier_tax_id = excluded.supplier_tax_id,
-                supplier_type = excluded.supplier_type
-            """,
-            (
-                record_id,
-                record.get("supplier_name"),
-                record.get("supplier_id_source"),
-                record.get("supplier_tax_id"),
-                record.get("supplier_type"),
-            ),
-        )
-
-    def upsert_award_details(self, record_id: int, record: dict[str, Any]) -> None:
-        self.execute(
-            """
-            insert into mart.procurement_award_details (
-                record_id, awarded_amount, currency_code, award_date
-            )
-            values (%s, %s, %s, %s)
-            on conflict (record_id) do update set
-                awarded_amount = excluded.awarded_amount,
-                currency_code = excluded.currency_code,
-                award_date = excluded.award_date
-            """,
-            (record_id, record.get("awarded_amount"), record.get("currency_code"), record.get("award_date")),
-        )
-
-    def upsert_item_details(self, record_id: int, record: dict[str, Any]) -> None:
-        self.execute(
-            """
-            insert into mart.procurement_item_details (
-                record_id, item_description, category_source, category_normalised
-            )
-            values (%s, %s, %s, %s)
-            on conflict (record_id) do update set
-                item_description = excluded.item_description,
-                category_source = excluded.category_source,
-                category_normalised = excluded.category_normalised
-            """,
-            (
-                record_id,
-                record.get("item_description"),
-                record.get("category_source"),
-                record.get("category_normalised"),
-            ),
-        )
-
-    def upsert_mart_records(self, records: Iterable[dict[str, Any]]) -> int:
-        sql = """
-            insert into mart.procurement_records (
-                process_id, process_number, title, description,
-                buyer_name, buyer_id_source, buyer_tax_id,
-                procurement_method, process_status, source_status,
-                publication_date, closing_date, award_date,
-                estimated_amount, awarded_amount, currency_code,
-                supplier_name, supplier_id_source, supplier_tax_id, supplier_type,
-                item_description, category_source, category_normalised,
-                country_code, source_system, source_record_id, source_url,
-                extracted_at, source_last_modified_at, connector_version,
-                raw_payload, raw_payload_hash,
-                normalisation_status, normalised_at, data_quality_status, missing_fields
-            )
-            values (
-                %(process_id)s, %(process_number)s, %(title)s, %(description)s,
-                %(buyer_name)s, %(buyer_id_source)s, %(buyer_tax_id)s,
-                %(procurement_method)s, %(process_status)s, %(source_status)s,
-                %(publication_date)s, %(closing_date)s, %(award_date)s,
-                %(estimated_amount)s, %(awarded_amount)s, %(currency_code)s,
-                %(supplier_name)s, %(supplier_id_source)s, %(supplier_tax_id)s, %(supplier_type)s,
-                %(item_description)s, %(category_source)s, %(category_normalised)s,
-                %(country_code)s, %(source_system)s, %(source_record_id)s, %(source_url)s,
-                %(extracted_at)s, %(source_last_modified_at)s, %(connector_version)s,
-                %(raw_payload)s::jsonb, %(raw_payload_hash)s,
-                %(normalisation_status)s, %(normalised_at)s, %(data_quality_status)s, %(missing_fields)s::jsonb
-            )
-            on conflict (source_system, source_record_id, raw_payload_hash)
-            do nothing
-        """
-        rows = []
-        for record in records:
-            payload = dict(record)
-            payload["raw_payload"] = json.dumps(payload["raw_payload"], ensure_ascii=False)
-            payload["missing_fields"] = json.dumps(payload["missing_fields"], ensure_ascii=False)
-            rows.append(payload)
-
-        with self.conn.cursor() as cur:
-            cur.executemany(sql, rows)
-        return len(rows)
-
 
 def ensure_sslmode(dsn: str) -> str:
     if "sslmode=" in dsn:

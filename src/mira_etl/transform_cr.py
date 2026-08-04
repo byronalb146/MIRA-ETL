@@ -30,6 +30,7 @@ MINIMUM_FIELDS = [
 def build_records(
     *,
     config: SourceConfig,
+    period: str,
     connector_version: str,
     source_rows: dict[str, list[dict[str, str | None]]],
 ) -> list[dict[str, Any]]:
@@ -55,19 +56,17 @@ def build_records(
             "institucion": institucion or None,
         }
 
-        source_record_id = ":".join(
-            [
-                "CR",
-                "SICOP",
-                nro_sicop or "",
-                row.get("LINEA") or "",
-                row.get("CEDULA_PROVEEDOR") or "",
-                row.get("PROD_ID") or "",
-            ]
-        )
+        source_record_id = nro_sicop
 
         record = {
-            "process_id": stable_id(config.country_code, nro_sicop, prefix="MIRA-CR-"),
+            "process_id": stable_id(
+                config.country_code,
+                nro_sicop,
+                row.get("LINEA"),
+                row.get("CEDULA_PROVEEDOR"),
+                row.get("PROD_ID"),
+                prefix="MIRA-CR-",
+            ),
             "process_number": row.get("NUMERO_PROCEDIMIENTO") or cartel.get("NRO_PROCEDIMIENTO"),
             "title": cartel.get("CARTEL_NM") or row.get("DESCR_PROCEDIMIENTO"),
             "description": row.get("DESCR_PROCEDIMIENTO") or cartel.get("CARTEL_NM"),
@@ -93,9 +92,9 @@ def build_records(
             "country_code": config.country_code,
             "source_system": config.source_system,
             "source_record_id": source_record_id,
-            "source_url": None,
+            "source_url": config.source_url_for_period(period),
             "extracted_at": extracted_at,
-            "source_last_modified_at": parse_datetime(cartel.get("FECHA_MOD") or row.get("fecha_rev")),
+            "source_last_modified_at": parse_datetime(row.get("fecha_rev")),
             "connector_version": connector_version,
             "raw_payload": raw_payload,
             "raw_payload_hash": stable_json_hash(raw_payload),

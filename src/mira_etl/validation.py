@@ -75,11 +75,11 @@ class ValidationResult:
 
 
 def validate_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    source_record_counts = Counter(record.get("source_record_id") for record in records)
+    process_id_counts = Counter(record.get("process_id") for record in records)
     results: list[dict[str, Any]] = []
 
     for record in records:
-        record_results = validate_record(record, source_record_counts)
+        record_results = validate_record(record, process_id_counts)
         apply_quality_status(record, record_results)
         results.extend(result.as_dict() for result in record_results)
 
@@ -88,7 +88,7 @@ def validate_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def validate_record(
     record: dict[str, Any],
-    source_record_counts: Counter[str | None],
+    process_id_counts: Counter[str | None],
 ) -> list[ValidationResult]:
     results: list[ValidationResult] = []
 
@@ -220,17 +220,17 @@ def validate_record(
             )
         )
 
-    source_record_id = record.get("source_record_id")
-    if source_record_id and source_record_counts[source_record_id] > 1:
+    process_id = record.get("process_id")
+    if process_id and process_id_counts[process_id] > 1:
         results.append(
             issue(
                 record,
-                rule_code="DUPLICATE_SOURCE_RECORD_IN_RUN",
+                rule_code="DUPLICATE_PROCESS_ID_IN_RUN",
                 severity="ERROR",
-                field_name="source_record_id",
-                raw_value=source_record_id,
-                normalised_value=source_record_id,
-                message="The same source_record_id appears more than once in this run.",
+                field_name="process_id",
+                raw_value=process_id,
+                normalised_value=process_id,
+                message="The same process_id appears more than once in this run.",
             )
         )
 
@@ -297,7 +297,7 @@ def raw_value_for(record: dict[str, Any], field_name: str) -> object:
         "supplier_tax_id": adjudication.get("CEDULA_PROVEEDOR"),
         "supplier_type": (payload.get("proveedor") or {}).get("TIPO_PROVEEDOR"),
         "item_description": adjudication.get("DESCR_BIEN_SERVICIO"),
-        "source_last_modified_at": cartel.get("FECHA_MOD") or adjudication.get("fecha_rev"),
+        "source_last_modified_at": adjudication.get("fecha_rev"),
     }
     return mapping.get(field_name)
 

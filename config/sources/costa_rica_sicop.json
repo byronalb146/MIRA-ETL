@@ -2,7 +2,7 @@
   "source": "costa_rica_sicop",
   "country_code": "CR",
   "source_system": "SICOP Costa Rica",
-  "connector_version_env": "MIRA_CONNECTOR_VERSION",
+  "connector_version": "cr-sicop-0.1.0",
   "download": {
     "type": "http_zip",
     "url_template": "https://dlsaobservatorioprod.blob.core.windows.net/fs-synapse-observatorio-produccion/Zip/{period}.zip"

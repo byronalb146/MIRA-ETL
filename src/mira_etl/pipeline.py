@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +21,7 @@ def run_pipeline(
     local_zip: Path | None,
 ) -> None:
     config = SourceConfig.load(config_dir, source)
-    connector_version = os.environ.get(config.connector_version_env, f"{source}-local")
+    connector_version = config.connector_version
     work_dir.mkdir(parents=True, exist_ok=True)
 
     with Database.from_env() as db:
@@ -54,7 +53,12 @@ def run_pipeline(
                 )
                 db.insert_raw_rows(run_id=run_id, source_file_id=source_file_id, rows=rows)
 
-            records = transform_source(config=config, connector_version=connector_version, source_rows=source_rows)
+            records = transform_source(
+                config=config,
+                period=period,
+                connector_version=connector_version,
+                source_rows=source_rows,
+            )
             validation_results = validate_records(records)
             staged = db.insert_staging_candidates(run_id=run_id, source=source, period=period, records=records)
             db.execute(
@@ -94,11 +98,12 @@ def run_pipeline(
 def transform_source(
     *,
     config: SourceConfig,
+    period: str,
     connector_version: str,
     source_rows: dict[str, list[dict[str, str | None]]],
 ) -> list[dict[str, Any]]:
     if config.source == "costa_rica_sicop":
-        return build_records(config=config, connector_version=connector_version, source_rows=source_rows)
+        return build_records(config=config, period=period, connector_version=connector_version, source_rows=source_rows)
     raise ValueError(f"Unsupported source: {config.source}")
 
 

@@ -1,0 +1,170 @@
+# Costa Rica SICOP -> MIRA Mapping
+
+Este documento traza los campos del modelo minimo MIRA contra los archivos del ZIP SICOP Costa Rica.
+
+Fuente de ejemplo analizada:
+
+```text
+202001.zip
+```
+
+Conector:
+
+```text
+costa_rica_sicop
+```
+
+Tabla principal de transformacion:
+
+```text
+ProcedimientoAdjudicacion.csv
+```
+
+La normalizacion toma cada fila de `ProcedimientoAdjudicacion.csv` como una adjudicacion/linea normalizada y la enriquece, cuando hay cruce disponible, con:
+
+- `DetalleCarteles.csv`
+- `InstitucionesRegistradas.csv`
+- `Proveedores.csv`
+
+## Trazabilidad
+
+| Campo MIRA | Origen en ZIP | Transformacion | Destino |
+|---|---|---|---|
+| `country_code` | Configuracion del conector | Valor fijo `CR` | `mart.procurement_record_core.country_code` |
+| `source_system` | Configuracion del conector | Valor fijo `SICOP Costa Rica` | `mart.procurement_record_core.source_system` |
+| `source_record_id` | `ProcedimientoAdjudicacion.NRO_SICOP` | Copia directa del identificador del sistema fuente | `mart.procurement_record_core.source_record_id` |
+| `source_url` | `config/sources/costa_rica_sicop.json -> download.url_template` | URL del ZIP renderizada con el periodo, por ejemplo `.../Zip/202001.zip` | `mart.procurement_record_core.source_url` |
+| `extracted_at` | Ejecucion ETL | Timestamp UTC de ejecucion | `mart.procurement_record_core.extracted_at` |
+| `source_last_modified_at` | `ProcedimientoAdjudicacion.fecha_rev` | Parseo a `timestamptz`; `NULL` si no existe o no parsea | `mart.procurement_record_core.source_last_modified_at` |
+| `connector_version` | `config/sources/costa_rica_sicop.json -> connector_version` | Valor fijo por ahora: `cr-sicop-0.1.0` | `mart.procurement_record_core.connector_version` |
+| `raw_payload` | Filas fuente relacionadas | JSON con `procedimiento_adjudicacion`, `detalle_cartel`, `proveedor`, `institucion` | `mart.procurement_record_core.raw_payload` |
+| `raw_payload_hash` | `raw_payload` | SHA-256 estable del JSON ordenado | `mart.procurement_record_core.raw_payload_hash` |
+| `normalisation_status` | Validaciones ETL | `PROCESSED` o `REVIEW_REQUIRED` | `mart.procurement_record_core.normalisation_status` |
+| `normalised_at` | Ejecucion ETL | Timestamp UTC de normalizacion | `mart.procurement_record_core.normalised_at` |
+| `data_quality_status` | Validaciones ETL | `COMPLETE`, `PARTIAL` o `INVALID` | `mart.procurement_record_core.data_quality_status` |
+| `missing_fields` | Validaciones ETL | Lista JSON de campos MIRA faltantes | `mart.procurement_record_core.missing_fields` |
+
+## Campos Minimos Normalizados
+
+| Grupo PDF | Campo MIRA | Origen en ZIP | Transformacion | Destino |
+|---|---|---|---|---|
+| Identificacion | `process_id` | `country_code` + `ProcedimientoAdjudicacion.NRO_SICOP` + `LINEA` + `CEDULA_PROVEEDOR` + `PROD_ID` | ID interno estable `MIRA-CR-{hash}` que une todas las tablas mart | `mart.procurement_record_core.process_id` |
+| Identificacion | `process_number` | `ProcedimientoAdjudicacion.NUMERO_PROCEDIMIENTO`; fallback `DetalleCarteles.NRO_PROCEDIMIENTO` | Copia directa | `mart.procurement_process_details.process_number` |
+| Identificacion | `title` | `DetalleCarteles.CARTEL_NM`; fallback `ProcedimientoAdjudicacion.DESCR_PROCEDIMIENTO` | Copia directa | `mart.procurement_process_details.title` |
+| Identificacion | `description` | `ProcedimientoAdjudicacion.DESCR_PROCEDIMIENTO`; fallback `DetalleCarteles.CARTEL_NM` | Copia directa | `mart.procurement_process_details.description` |
+| Comprador | `buyer_name` | `ProcedimientoAdjudicacion.INSTITUCION`; fallback `InstitucionesRegistradas.NOMBRE_INSTITUCION` | Copia directa | `mart.procurement_buyer_details.buyer_name` |
+| Comprador | `buyer_id_source` | `ProcedimientoAdjudicacion.CEDULA`; fallback `DetalleCarteles.CEDULA_INSTITUCION` | Copia directa | `mart.procurement_buyer_details.buyer_id_source` |
+| Comprador | `buyer_tax_id` | `ProcedimientoAdjudicacion.CEDULA`; fallback `DetalleCarteles.CEDULA_INSTITUCION` | Se usa la cedula institucional como identificador fiscal disponible | `mart.procurement_buyer_details.buyer_tax_id` |
+| Contratacion | `procurement_method` | `ProcedimientoAdjudicacion.TIPO_PROCEDIMIENTO`; fallback `DetalleCarteles.TIPO_PROCEDIMIENTO` | Copia del valor fuente | `mart.procurement_process_details.procurement_method` |
+| Contratacion | `process_status` | `DetalleCarteles.CARTEL_STAT` + existencia en `ProcedimientoAdjudicacion.csv` | Normaliza a catalogo MIRA: `DESERTED`, `CANCELLED`, `SUSPENDED`; si hay adjudicacion, `AWARDED` | `mart.procurement_process_details.process_status` |
+| Contratacion | `source_status` | `DetalleCarteles.CARTEL_STAT` | Valor original de la fuente | `mart.procurement_process_details.source_status` |
+| Fechas | `publication_date` | `DetalleCarteles.FECHA_PUBLICACION` | Parseo a `timestamptz`; si no cruza por `NRO_SICOP`, queda `NULL` | `mart.procurement_process_details.publication_date` |
+| Fechas | `closing_date` | `DetalleCarteles.FECHAH_APERTURA` | Parseo a `timestamptz`; si no cruza por `NRO_SICOP`, queda `NULL` | `mart.procurement_process_details.closing_date` |
+| Fechas | `award_date` | `ProcedimientoAdjudicacion.FECHA_ADJUD_FIRME` | Parseo a `timestamptz` | `mart.procurement_process_details.award_date` |
+| Montos | `estimated_amount` | `DetalleCarteles.MONTO_EST` | Parseo a `numeric`; si no cruza por `NRO_SICOP`, queda `NULL` | `mart.procurement_process_details.estimated_amount` |
+| Montos | `awarded_amount` | `ProcedimientoAdjudicacion.MONTO_ADJU_LINEA_CRC`; fallback `ProcedimientoAdjudicacion.MONTO_ADJU_LINEA` | Parseo a `numeric` | `mart.procurement_process_details.awarded_amount` |
+| Montos | `currency_code` | `ProcedimientoAdjudicacion.MONEDA_ADJUDICADA` | Copia directa del codigo fuente | `mart.procurement_process_details.currency_code` |
+| Proveedor | `supplier_name` | `ProcedimientoAdjudicacion.NOMBRE_PROVEEDOR`; fallback `Proveedores.NOMBRE_PROVEEDOR` | Copia directa | `mart.procurement_supplier_details.supplier_name` |
+| Proveedor | `supplier_id_source` | `ProcedimientoAdjudicacion.CEDULA_PROVEEDOR` | Copia directa | `mart.procurement_supplier_details.supplier_id_source` |
+| Proveedor | `supplier_tax_id` | `ProcedimientoAdjudicacion.CEDULA_PROVEEDOR` | Se usa la cedula proveedor como identificador fiscal disponible | `mart.procurement_supplier_details.supplier_tax_id` |
+| Proveedor | `supplier_type` | `Proveedores.TIPO_PROVEEDOR` | Normaliza texto a catalogo MIRA: `PERSON`, `COMPANY`, `CONSORTIUM`, `FOREIGN_SUPPLIER`, `UNKNOWN` | `mart.procurement_supplier_details.supplier_type` |
+| Bien o servicio | `item_description` | `ProcedimientoAdjudicacion.DESCR_BIEN_SERVICIO` | Copia directa | `mart.procurement_item_details.item_description` |
+| Bien o servicio | `category_source` | `ProcedimientoAdjudicacion.OBJETO_GASTO`; fallback `DetalleCarteles.CLAS_OBJ` | Copia directa | `mart.procurement_item_details.category_source` |
+| Bien o servicio | `category_normalised` | No disponible todavia | `NULL` hasta definir catalogo regional MIRA | `mart.procurement_item_details.category_normalised` |
+| Calidad | `data_quality_status` | Validaciones ETL | `COMPLETE`, `PARTIAL`, `INVALID` | `mart.procurement_record_core.data_quality_status` |
+
+## Datos Adicionales Conservados
+
+Aunque no todos los campos del ZIP tienen columna normalizada propia todavia, el ETL conserva el registro fuente completo en `raw` y tambien dentro de `raw_payload`.
+
+Para cada registro normalizado se conserva:
+
+```json
+{
+  "procedimiento_adjudicacion": "...",
+  "detalle_cartel": "...",
+  "proveedor": "...",
+  "institucion": "..."
+}
+```
+
+Eso permite reprocesar o ampliar el modelo sin volver a descargar la fuente.
+
+## Archivos del ZIP Cargados a Raw
+
+El conector carga a `raw.source_rows` los archivos requeridos y opcionales configurados:
+
+- `DetalleCarteles.csv`
+- `ProcedimientoAdjudicacion.csv`
+- `InstitucionesRegistradas.csv`
+- `Proveedores.csv`
+- `FechaPorEtapas.csv`
+- `Ofertas.csv`
+- `LineasOfertadas.csv`
+- `LineasAdjudicadas.csv`
+- `Contratos.csv`
+- `LineasContratadas.csv`
+- `OrdenPedido.csv`
+- `Recepciones.csv`
+- `LineasRecibidas.csv`
+- `Garantias.csv`
+- `RecursosObjecion.csv`
+- `SancionProveedores.csv`
+- `SistemaEvaluacionOfertas.csv`
+
+## Validaciones Auditadas
+
+Las validaciones se guardan en `audit.validation_results`.
+
+| Regla | Severidad | Descripcion |
+|---|---|---|
+| `MISSING_PROCESS_NUMBER` | `WARNING` | Falta numero oficial del proceso |
+| `MISSING_TITLE` | `WARNING` | Falta titulo |
+| `MISSING_BUYER_NAME` | `WARNING` | Falta nombre del comprador |
+| `MISSING_BUYER_TAX_ID` | `WARNING` | Falta identificador fiscal del comprador |
+| `MISSING_PROCUREMENT_METHOD` | `WARNING` | Falta metodo/modalidad de contratacion |
+| `MISSING_PROCESS_STATUS` | `WARNING` | Falta estado normalizado |
+| `MISSING_PUBLICATION_DATE` | `WARNING` | Falta fecha de publicacion |
+| `MISSING_AWARD_DATE` | `WARNING` | Falta fecha de adjudicacion |
+| `MISSING_AWARDED_AMOUNT` | `WARNING` | Falta monto adjudicado |
+| `MISSING_CURRENCY_CODE` | `WARNING` | Falta moneda |
+| `MISSING_SUPPLIER_NAME` | `WARNING` | Falta nombre del proveedor |
+| `MISSING_SUPPLIER_TAX_ID` | `WARNING` | Falta identificador fiscal del proveedor |
+| `MISSING_ITEM_DESCRIPTION` | `WARNING` | Falta descripcion del bien o servicio |
+| `NEGATIVE_ESTIMATED_AMOUNT` | `ERROR` | Monto estimado negativo |
+| `NEGATIVE_AWARDED_AMOUNT` | `ERROR` | Monto adjudicado negativo |
+| `CLOSING_BEFORE_PUBLICATION` | `ERROR` | Fecha de cierre anterior a publicacion |
+| `AWARD_BEFORE_PUBLICATION` | `ERROR` | Fecha de adjudicacion anterior a publicacion |
+| `UNPARSEABLE_DATE` | `ERROR` | La fuente trae fecha, pero no pudo parsearse |
+| `INVALID_CURRENCY_CODE` | `WARNING` | Moneda fuera del catalogo inicial |
+| `MISSING_CURRENCY_WITH_AMOUNT` | `ERROR` | Existe monto, pero no moneda |
+| `INVALID_PROCESS_STATUS` | `ERROR` | Estado fuera del catalogo MIRA |
+| `INVALID_SUPPLIER_TYPE` | `ERROR` | Tipo de proveedor fuera del catalogo MIRA |
+| `DUPLICATE_PROCESS_ID_IN_RUN` | `ERROR` | Mismo identificador interno aparece mas de una vez en la corrida |
+
+## Resultado Observado en 202001.zip
+
+En la ultima ejecucion validada:
+
+```text
+mart.procurement_record_core:        3276
+mart.procurement_process_details:    3276
+mart.procurement_buyer_details:      3276
+mart.procurement_supplier_details:   3276
+mart.procurement_item_details:       3276
+```
+
+Calidad:
+
+```text
+COMPLETE: 23
+PARTIAL: 3253
+```
+
+Validacion principal:
+
+```text
+MISSING_PUBLICATION_DATE: 3253
+```
+
+La razon observada es que `ProcedimientoAdjudicacion.csv` contiene 639 `NRO_SICOP` distintos, pero solo 5 cruzan con `DetalleCarteles.csv` por `NRO_SICOP` en este ZIP. Por eso la fecha de publicacion queda `NULL` para la mayoria de registros y se audita como faltante.
