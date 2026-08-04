@@ -10,6 +10,7 @@ from mira_etl.csvio import read_csv_rows
 from mira_etl.db import Database
 from mira_etl.extract import extract_zip, obtain_zip, validate_required_files
 from mira_etl.transform_cr import build_records
+from mira_etl.validation import validate_records
 
 
 def run_pipeline(
@@ -54,6 +55,7 @@ def run_pipeline(
                 db.insert_raw_rows(run_id=run_id, source_file_id=source_file_id, rows=rows)
 
             records = transform_source(config=config, connector_version=connector_version, source_rows=source_rows)
+            validation_results = validate_records(records)
             staged = db.insert_staging_candidates(run_id=run_id, source=source, period=period, records=records)
             db.execute(
                 """
@@ -62,11 +64,24 @@ def run_pipeline(
                 """,
                 (run_id, staged),
             )
-            inserted = db.upsert_mart_records(records)
+            validations = db.insert_validation_results(
+                run_id=run_id,
+                source=source,
+                period=period,
+                results=validation_results,
+            )
             db.execute(
                 """
                 insert into audit.etl_row_counts (run_id, layer_name, table_name, row_count)
-                values (%s, 'mart', 'procurement_records', %s)
+                values (%s, 'audit', 'validation_results', %s)
+                """,
+                (run_id, validations),
+            )
+            inserted = db.upsert_mart_split_records(records)
+            db.execute(
+                """
+                insert into audit.etl_row_counts (run_id, layer_name, table_name, row_count)
+                values (%s, 'mart', 'procurement_record_core', %s)
                 """,
                 (run_id, inserted),
             )

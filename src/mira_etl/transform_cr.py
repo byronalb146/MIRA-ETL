@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unicodedata
+import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -117,6 +118,7 @@ def index_by(rows: list[dict[str, str | None]], key: str) -> dict[str, dict[str,
 def parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
+    value = re.sub(r"(\.\d{6})\d+", r"\1", value)
     for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y"):
         try:
             parsed = datetime.strptime(value, fmt)

@@ -154,3 +154,112 @@ create index if not exists idx_mart_procurement_process_number
 
 create index if not exists idx_mart_procurement_supplier_tax_id
     on mart.procurement_records (supplier_tax_id);
+
+create table if not exists mart.procurement_record_core (
+    record_id bigserial primary key,
+    process_id text not null,
+    country_code text not null,
+    source_system text not null,
+    source_record_id text not null,
+    source_url text,
+    extracted_at timestamptz not null,
+    source_last_modified_at timestamptz,
+    connector_version text not null,
+    raw_payload jsonb not null,
+    raw_payload_hash text not null,
+    normalisation_status text not null check (
+        normalisation_status in ('PENDING', 'PROCESSED', 'ERROR', 'REVIEW_REQUIRED')
+    ),
+    normalised_at timestamptz not null,
+    data_quality_status text not null check (
+        data_quality_status in ('COMPLETE', 'PARTIAL', 'INVALID', 'DUPLICATE')
+    ),
+    missing_fields jsonb not null default '[]'::jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+
+    unique (source_system, source_record_id, raw_payload_hash)
+);
+
+create table if not exists mart.procurement_process_details (
+    record_id bigint primary key references mart.procurement_record_core(record_id),
+    process_number text,
+    title text,
+    description text,
+    procurement_method text,
+    process_status text check (
+        process_status is null or process_status in (
+            'PLANNED', 'PUBLISHED', 'OPEN', 'EVALUATION', 'AWARDED',
+            'CONTRACTED', 'COMPLETED', 'CANCELLED', 'DESERTED', 'SUSPENDED'
+        )
+    ),
+    source_status text,
+    publication_date timestamptz,
+    closing_date timestamptz,
+    award_date timestamptz,
+    estimated_amount numeric,
+    currency_code text
+);
+
+create table if not exists mart.procurement_buyer_details (
+    record_id bigint primary key references mart.procurement_record_core(record_id),
+    buyer_name text,
+    buyer_id_source text,
+    buyer_tax_id text
+);
+
+create table if not exists mart.procurement_supplier_details (
+    record_id bigint primary key references mart.procurement_record_core(record_id),
+    supplier_name text,
+    supplier_id_source text,
+    supplier_tax_id text,
+    supplier_type text check (
+        supplier_type is null or supplier_type in (
+            'PERSON', 'COMPANY', 'CONSORTIUM', 'NONPROFIT',
+            'PUBLIC_ENTITY', 'FOREIGN_SUPPLIER', 'UNKNOWN'
+        )
+    )
+);
+
+create table if not exists mart.procurement_award_details (
+    record_id bigint primary key references mart.procurement_record_core(record_id),
+    awarded_amount numeric,
+    currency_code text,
+    award_date timestamptz
+);
+
+create table if not exists mart.procurement_item_details (
+    record_id bigint primary key references mart.procurement_record_core(record_id),
+    item_description text,
+    category_source text,
+    category_normalised text
+);
+
+create table if not exists audit.validation_results (
+    validation_id bigserial primary key,
+    run_id bigint not null references audit.etl_runs(id),
+    source text not null,
+    period text not null,
+    source_record_id text,
+    raw_payload_hash text,
+    rule_code text not null,
+    severity text not null check (severity in ('ERROR', 'WARNING', 'INFO')),
+    field_name text,
+    raw_value text,
+    normalised_value text,
+    message text not null,
+    payload jsonb,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists idx_mart_record_core_source_record
+    on mart.procurement_record_core (source_system, source_record_id);
+
+create index if not exists idx_mart_process_details_process_number
+    on mart.procurement_process_details (process_number);
+
+create index if not exists idx_mart_supplier_details_tax_id
+    on mart.procurement_supplier_details (supplier_tax_id);
+
+create index if not exists idx_audit_validation_results_run
+    on audit.validation_results (run_id, severity, rule_code);
