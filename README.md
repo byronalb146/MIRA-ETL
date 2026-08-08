@@ -33,6 +33,25 @@ $env:SUPABASE_DB_URL="postgresql://..."
 .venv\Scripts\mira-etl run --source costa_rica_sicop --period 202001
 ```
 
+> **Modo de prueba de Costa Rica:** actualmente ese conector está limitado a 2
+> contratos para evitar cargas grandes en Supabase. El límite temporal está
+> definido por `CONTRACT_LIMIT` en `src/mira_etl/pipeline.py`.
+
+Guatemala se lee incrementalmente con `ijson` y se carga en lotes. El tamaño
+del lote y un límite opcional se configuran en
+`config/sources/guatemala_guatecompras.json`:
+
+```json
+"processing": {
+  "batch_size": 250,
+  "record_limit": 2
+}
+```
+
+Usa un número en `record_limit` para una prueba acotada; actualmente Guatemala
+también está limitado a 2 registros. `null` procesaría el archivo completo. El
+límite temporal `CONTRACT_LIMIT` continúa aplicándose al flujo de Costa Rica.
+
 Crear esquemas/tablas:
 
 ```powershell

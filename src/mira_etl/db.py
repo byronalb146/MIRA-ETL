@@ -99,7 +99,15 @@ ITEM_DETAIL_SQL = """
 
 class Database:
     def __init__(self, dsn: str) -> None:
-        self.conn = psycopg.connect(ensure_sslmode(dsn), row_factory=dict_row, autocommit=True)
+        self.dsn = ensure_sslmode(dsn)
+        self.conn = self._connect()
+
+    def _connect(self) -> psycopg.Connection:
+        return psycopg.connect(
+            self.dsn,
+            row_factory=dict_row,
+            autocommit=True,
+        )
 
     @classmethod
     def from_env(cls) -> "Database":
@@ -153,6 +161,33 @@ class Database:
             (status, error_message, run_id),
         )
 
+    def finish_run_after_error(
+        self,
+        run_id: int,
+        error_message: str,
+    ) -> None:
+        try:
+            self.finish_run(run_id, "ERROR", error_message)
+            return
+        except (psycopg.Error, OSError):
+            pass
+
+        recovery_conn = self._connect()
+        try:
+            with recovery_conn.cursor() as cur:
+                cur.execute(
+                    """
+                    update audit.etl_runs
+                       set status = 'ERROR',
+                           error_message = %s,
+                           finished_at = now()
+                     where id = %s
+                    """,
+                    (error_message, run_id),
+                )
+        finally:
+            recovery_conn.close()
+
     def insert_source_file(
         self,
         *,
@@ -174,22 +209,79 @@ class Database:
         assert row is not None
         return int(row["source_file_id"])
 
+    def update_source_file_row_count(
+        self,
+        source_file_id: int,
+        row_count: int,
+    ) -> None:
+        self.execute(
+            """
+            update raw.source_files
+               set row_count = %s
+             where source_file_id = %s
+            """,
+            (row_count, source_file_id),
+        )
+
     def insert_raw_rows(
         self,
         *,
         run_id: int,
         source_file_id: int,
         rows: Iterable[dict[str, Any]],
-    ) -> None:
-        records = [(run_id, source_file_id, index, json.dumps(row, ensure_ascii=False)) for index, row in enumerate(rows, 1)]
-        with self.conn.cursor() as cur:
-            cur.executemany(
-                """
-                insert into raw.source_rows (run_id, source_file_id, row_number, payload)
-                values (%s, %s, %s, %s::jsonb)
-                """,
-                records,
+        batch_size: int = 250,
+        start_row_number: int = 1,
+        progress_offset: int = 0,
+    ) -> int:
+        sql = """
+            insert into raw.source_rows (
+                run_id,
+                source_file_id,
+                row_number,
+                payload
             )
+            values (%s, %s, %s, %s::jsonb)
+        """
+
+        batch = []
+        total = 0
+
+        with self.conn.cursor() as cur:
+            for index, row in enumerate(rows, start_row_number):
+                batch.append(
+                    (
+                        run_id,
+                        source_file_id,
+                        index,
+                        json.dumps(
+                            row,
+                            ensure_ascii=False,
+                            default=str,
+                        ),
+                    )
+                )
+
+                if len(batch) >= batch_size:
+                    cur.executemany(sql, batch)
+
+                    total += len(batch)
+
+                    print(
+                        f"RAW inserted: {progress_offset + total:,}"
+                    )
+
+                    batch.clear()
+
+            if batch:
+                cur.executemany(sql, batch)
+
+                total += len(batch)
+
+                print(
+                    f"RAW inserted: {progress_offset + total:,}"
+                )
+
+        return total
 
     def insert_staging_candidates(
         self,
@@ -198,29 +290,62 @@ class Database:
         source: str,
         period: str,
         records: Iterable[dict[str, Any]],
+        batch_size: int = 250,
+        progress_offset: int = 0,
     ) -> int:
-        rows = [
-            (
+        sql = """
+            insert into staging.normalized_candidates (
                 run_id,
                 source,
                 period,
-                record["source_record_id"],
-                record["raw_payload_hash"],
-                json.dumps(record, ensure_ascii=False, default=str),
+                source_record_id,
+                raw_payload_hash,
+                payload
             )
-            for record in records
-        ]
+            values (%s, %s, %s, %s, %s, %s::jsonb)
+        """
+
+        batch = []
+        total = 0
+
         with self.conn.cursor() as cur:
-            cur.executemany(
-                """
-                insert into staging.normalized_candidates (
-                    run_id, source, period, source_record_id, raw_payload_hash, payload
+            for record in records:
+                batch.append(
+                    (
+                        run_id,
+                        source,
+                        period,
+                        record["source_record_id"],
+                        record["raw_payload_hash"],
+                        json.dumps(
+                            record,
+                            ensure_ascii=False,
+                            default=str,
+                        ),
+                    )
                 )
-                values (%s, %s, %s, %s, %s, %s::jsonb)
-                """,
-                rows,
-            )
-        return len(rows)
+
+                if len(batch) >= batch_size:
+                    cur.executemany(sql, batch)
+
+                    total += len(batch)
+
+                    print(
+                        f"STAGING inserted: {progress_offset + total:,}"
+                    )
+
+                    batch.clear()
+
+            if batch:
+                cur.executemany(sql, batch)
+
+                total += len(batch)
+
+                print(
+                    f"STAGING inserted: {progress_offset + total:,}"
+                )
+
+        return total
 
     def insert_validation_results(
         self,
@@ -229,39 +354,48 @@ class Database:
         source: str,
         period: str,
         results: Iterable[dict[str, Any]],
+        batch_size: int = 250,
     ) -> int:
-        rows = [
-            (
-                run_id,
-                source,
-                period,
-                result.get("source_record_id"),
-                result.get("raw_payload_hash"),
-                result["rule_code"],
-                result["severity"],
-                result.get("field_name"),
-                result.get("raw_value"),
-                result.get("normalised_value"),
-                result["message"],
-                json.dumps(result.get("payload"), ensure_ascii=False, default=str),
+        sql = """
+            insert into audit.validation_results (
+                run_id, source, period, source_record_id, raw_payload_hash,
+                rule_code, severity, field_name, raw_value, normalised_value,
+                message, payload
             )
-            for result in results
-        ]
-        if not rows:
-            return 0
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+        """
+        batch = []
+        total = 0
         with self.conn.cursor() as cur:
-            cur.executemany(
-                """
-                insert into audit.validation_results (
-                    run_id, source, period, source_record_id, raw_payload_hash,
-                    rule_code, severity, field_name, raw_value, normalised_value,
-                    message, payload
+            for result in results:
+                batch.append(
+                    (
+                        run_id,
+                        source,
+                        period,
+                        result.get("source_record_id"),
+                        result.get("raw_payload_hash"),
+                        result["rule_code"],
+                        result["severity"],
+                        result.get("field_name"),
+                        result.get("raw_value"),
+                        result.get("normalised_value"),
+                        result["message"],
+                        json.dumps(
+                            result.get("payload"),
+                            ensure_ascii=False,
+                            default=str,
+                        ),
+                    )
                 )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                """,
-                rows,
-            )
-        return len(rows)
+                if len(batch) >= batch_size:
+                    cur.executemany(sql, batch)
+                    total += len(batch)
+                    batch.clear()
+            if batch:
+                cur.executemany(sql, batch)
+                total += len(batch)
+        return total
 
     def upsert_mart_split_records(self, records: Iterable[dict[str, Any]]) -> int:
         record_list = list(records)

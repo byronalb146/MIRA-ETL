@@ -1,35 +1,193 @@
 from __future__ import annotations
 
 import shutil
-import urllib.request
+import subprocess
 import zipfile
 from datetime import datetime
 from pathlib import Path
 
+import httpx
+
 from mira_etl.config import SourceConfig
 
 
-def obtain_zip(config: SourceConfig, period: str, work_dir: Path, local_zip: Path | None) -> Path:
+def obtain_zip(
+    config: SourceConfig,
+    period: str,
+    work_dir: Path,
+    local_zip: Path | None,
+) -> Path:
     downloads_dir = work_dir / "downloads"
-    downloads_dir.mkdir(parents=True, exist_ok=True)
+    downloads_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    target = downloads_dir / f"{config.source}_{period}.zip"
+    target = (
+        downloads_dir
+        / f"{config.source}_{period}.zip"
+    )
+
     if local_zip is not None:
-        shutil.copyfile(local_zip, target)
+        shutil.copyfile(
+            local_zip,
+            target,
+        )
         return target
 
-    url = config.download["url_template"].format(period=period)
-    with urllib.request.urlopen(url, timeout=120) as response:
-        target.write_bytes(response.read())
+    url = config.source_url_for_period(period)
+
+    print(f"Downloading: {url}")
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 "
+            "(Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 "
+            "(KHTML, like Gecko) "
+            "Chrome/150.0.0.0 Safari/537.36"
+        ),
+        "Accept": (
+            "application/zip,"
+            "application/octet-stream,"
+            "*/*"
+        ),
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+    }
+
+    try:
+        download_with_httpx(
+            url=url,
+            target=target,
+            headers=headers,
+            bootstrap_url=config.download.get(
+                "bootstrap_url"
+            ),
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 403:
+            raise
+        print(
+            "Cloudflare rejected httpx with HTTP 403; "
+            "retrying with curl."
+        )
+        download_with_curl(
+            url=url,
+            target=target,
+            headers=headers,
+        )
+
+    if not zipfile.is_zipfile(target):
+        raise ValueError(
+            f"Downloaded file is not a valid ZIP: {target}"
+        )
+
+    print(
+        f"Downloaded ZIP: {target} "
+        f"({target.stat().st_size} bytes)"
+    )
+
     return target
+
+
+def download_with_httpx(
+    *,
+    url: str,
+    target: Path,
+    headers: dict[str, str],
+    bootstrap_url: str | None,
+) -> None:
+    with httpx.Client(
+        follow_redirects=True,
+        timeout=httpx.Timeout(
+            connect=30.0,
+            read=300.0,
+            write=30.0,
+            pool=30.0,
+        ),
+        headers=headers,
+    ) as client:
+        if bootstrap_url:
+            bootstrap_response = client.get(
+                bootstrap_url,
+                headers={
+                    "Accept": (
+                        "text/html,application/xhtml+xml"
+                    ),
+                },
+            )
+            bootstrap_response.raise_for_status()
+
+        with client.stream(
+            "GET",
+            url,
+            headers={
+                "Referer": bootstrap_url,
+            } if bootstrap_url else None,
+        ) as response:
+            response.raise_for_status()
+            content_type = response.headers.get(
+                "content-type",
+                "",
+            ).lower()
+            print(
+                f"HTTP {response.status_code} "
+                f"| {content_type}"
+            )
+            if (
+                "application/zip" not in content_type
+                and "application/octet-stream"
+                not in content_type
+            ):
+                raise ValueError(
+                    "Expected ZIP from source, "
+                    f"but received: {content_type}"
+                )
+            with target.open("wb") as fh:
+                for chunk in response.iter_bytes():
+                    fh.write(chunk)
+
+
+def download_with_curl(
+    *,
+    url: str,
+    target: Path,
+    headers: dict[str, str],
+) -> None:
+    curl = shutil.which("curl")
+    if curl is None:
+        raise RuntimeError(
+            "Cloudflare rejected httpx and curl is not installed."
+        )
+
+    command = [
+        curl,
+        "--silent",
+        "--show-error",
+        "--fail",
+        "--location",
+        "--retry",
+        "3",
+        "--retry-all-errors",
+        "--connect-timeout",
+        "30",
+        "--max-time",
+        "300",
+    ]
+    for name, value in headers.items():
+        command.extend(["--header", f"{name}: {value}"])
+    command.extend(["--output", str(target), url])
+    subprocess.run(command, check=True)
 
 
 def extract_zip(zip_path: Path, work_dir: Path, source: str, period: str) -> Path:
     run_suffix = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
     extract_dir = work_dir / "extracts" / source / period / run_suffix
     extract_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Extracting ZIP: {zip_path}")
     with zipfile.ZipFile(zip_path) as archive:
         archive.extractall(extract_dir)
+    print(f"ZIP extracted: {extract_dir}")
     return extract_dir
 
 

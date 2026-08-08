@@ -1,0 +1,24 @@
+{
+  "source": "guatemala_guatecompras",
+  "country_code": "GT",
+  "source_system": "Guatecompras OCDS",
+  "connector_version": "gt-ocds-0.1.0",
+  "download": {
+    "type": "http_zip",
+    "bootstrap_url": "https://ocds.guatecompras.gt/",
+    "url_template": "https://ocds.guatecompras.gt/file/json/{year}/{month}"
+  },
+  "files": {
+    "required": [],
+    "optional": []
+  },
+  "csv": {
+    "default_delimiter": ";",
+    "delimiters": {},
+    "encoding": "utf-8"
+  },
+  "processing": {
+    "batch_size": 250,
+    "record_limit": 2
+  }
+}

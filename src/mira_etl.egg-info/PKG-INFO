@@ -4,3 +4,5 @@ Version: 0.1.0
 Summary: ETL configurable para normalizar datos de contrataciones publicas en MIRA.
 Requires-Python: >=3.11
 Requires-Dist: psycopg[binary]>=3.2.1
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: ijson>=3.3.0
