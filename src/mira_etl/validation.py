@@ -277,6 +277,30 @@ def issue(
 
 def raw_value_for(record: dict[str, Any], field_name: str) -> object:
     payload = record.get("raw_payload") or {}
+
+    if "proceso" in payload:  # nicaragua_siscae shape
+        proceso = payload.get("proceso") or {}
+        mapping = {
+            "process_number": proceso.get("numero_proceso"),
+            "title": proceso.get("descripcion"),
+            "buyer_name": proceso.get("institucion"),
+            "buyer_tax_id": None,
+            "procurement_method": proceso.get("tipo_procedimiento"),
+            "process_status": proceso.get("estado"),
+            "publication_date": proceso.get("fecha_publicacion"),
+            "closing_date": proceso.get("fecha_cierre"),
+            "award_date": None,
+            "estimated_amount": None,
+            "awarded_amount": None,
+            "currency_code": None,
+            "supplier_name": None,
+            "supplier_tax_id": None,
+            "supplier_type": None,
+            "item_description": proceso.get("descripcion"),
+            "source_last_modified_at": proceso.get("ultima_actualizacion"),
+        }
+        return mapping.get(field_name)
+
     adjudication = payload.get("procedimiento_adjudicacion") or {}
     cartel = payload.get("detalle_cartel") or {}
 
