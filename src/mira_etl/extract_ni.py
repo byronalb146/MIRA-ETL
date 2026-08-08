@@ -157,10 +157,14 @@ def parse_active_procedures_page(soup: BeautifulSoup) -> list[dict[str, str | No
     return rows
 
 
-def fetch_active_procedures(session: requests.Session) -> list[dict[str, str | None]]:
+def fetch_active_procedures(session: requests.Session, limit: int | None = None) -> list[dict[str, str | None]]:
     """Fetch every "Procesos Vigentes" record from SISCAE: raises the page size to
     100 (from the default 10) and follows the validated pagination pattern
-    (portlet link id N corresponds to page N+1, within one block of 10 pages)."""
+    (portlet link id N corresponds to page N+1, within one block of 10 pages).
+
+    If `limit` is set, stops paginating as soon as enough rows are collected
+    instead of walking every page -- useful for quick smoke tests so they
+    don't hammer the source server for a handful of records."""
     session.headers.setdefault("User-Agent", USER_AGENT)
 
     response = fetch_with_retries(session, "get", BASE_URL)
@@ -183,6 +187,9 @@ def fetch_active_procedures(session: requests.Session) -> list[dict[str, str | N
         page_rows = parse_active_procedures_page(soup)
         all_rows.extend(page_rows)
 
+        if limit is not None and len(all_rows) >= limit:
+            return all_rows[:limit]
+
         page_text = soup.get_text(" ", strip=True)
         match = re.search(r"P[aá]gina\s+(\d+)\s*/\s*(\d+)", page_text)
         if not match:
@@ -200,10 +207,13 @@ def fetch_active_procedures(session: requests.Session) -> list[dict[str, str | N
     return all_rows
 
 
-def scrape_siscae(period: str) -> dict[str, list[dict[str, Any]]]:
+def scrape_siscae(period: str, limit: int | None = None) -> dict[str, list[dict[str, Any]]]:
     """Entry point used by the pipeline. Returns a mapping shaped like the CSV-based
     connectors' `source_rows` (logical dataset name -> list of row dicts), so the
     rest of the pipeline (raw storage, staging, mart upsert) needs no changes.
+
+    `limit` caps the number of records fetched -- intended for quick smoke tests
+    against a real database without loading the full ~400+ active processes.
 
     Only "Procesos Vigentes" is wired up for now. Awarded-process detail (supplier,
     RUC, awarded amount) requires a Mas Datos -> Adjudicacion -> Volver navigation
@@ -211,5 +221,5 @@ def scrape_siscae(period: str) -> dict[str, list[dict[str, Any]]]:
     and is intentionally left out of this connector until that is fixed.
     """
     session = requests.Session()
-    active_rows = fetch_active_procedures(session)
+    active_rows = fetch_active_procedures(session, limit=limit)
     return {"procesos_vigentes": active_rows}

@@ -21,6 +21,7 @@ def run_pipeline(
     config_dir: Path,
     work_dir: Path,
     local_zip: Path | None,
+    limit: int | None = None,
 ) -> None:
     config = SourceConfig.load(config_dir, source)
     connector_version = config.connector_version
@@ -37,6 +38,7 @@ def run_pipeline(
                 local_zip=local_zip,
                 run_id=run_id,
                 db=db,
+                limit=limit,
             )
 
             records = transform_source(
@@ -90,6 +92,7 @@ def obtain_source_rows(
     local_zip: Path | None,
     run_id: int,
     db: Database,
+    limit: int | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Obtains the raw rows for this source, persists each logical dataset to
     raw.source_files / raw.source_rows, and returns them keyed by dataset name.
@@ -97,13 +100,18 @@ def obtain_source_rows(
     Two download types are supported today:
       - "http_zip": download+unzip a period ZIP and read its CSVs (Costa Rica).
       - "html_session_scrape": scrape a stateful HTML source directly (Nicaragua).
+
+    `limit` caps how many rows come out of each dataset -- intended for quick
+    smoke tests against a real database. For the scraper it also stops
+    paginating early (fewer requests against the source); for CSV sources it
+    simply truncates the parsed rows.
     """
     download_type = config.download.get("type", "http_zip")
 
     if download_type == "html_session_scrape":
         from mira_etl.extract_ni import scrape_siscae
 
-        source_rows = scrape_siscae(period)
+        source_rows = scrape_siscae(period, limit=limit)
     elif download_type == "http_zip":
         zip_path = obtain_zip(config, period, work_dir, local_zip)
         extract_dir = extract_zip(zip_path, work_dir, source, period)
@@ -116,9 +124,8 @@ def obtain_source_rows(
             if not csv_path.exists():
                 continue
             delimiter = config.delimiter_for(filename)
-            source_rows[filename] = list(
-                read_csv_rows(csv_path, delimiter=delimiter, encoding=config.encoding)
-            )
+            rows = list(read_csv_rows(csv_path, delimiter=delimiter, encoding=config.encoding))
+            source_rows[filename] = rows[:limit] if limit is not None else rows
     else:
         raise ValueError(f"Unsupported download type: {download_type}")
 

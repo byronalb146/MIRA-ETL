@@ -17,6 +17,12 @@ def main() -> None:
     run.add_argument("--local-zip", type=Path, default=None)
     run.add_argument("--work-dir", type=Path, default=Path("data/work"))
     run.add_argument("--config-dir", type=Path, default=Path("config/sources"))
+    run.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap the number of records fetched/loaded (quick smoke tests against a real database).",
+    )
 
     subparsers.add_parser("init-db", help="Create database schemas and tables.")
 
@@ -34,6 +40,7 @@ def main() -> None:
             config_dir=args.config_dir,
             work_dir=args.work_dir,
             local_zip=args.local_zip,
+            limit=args.limit,
         )
 
 
