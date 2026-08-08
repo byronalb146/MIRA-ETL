@@ -24,7 +24,8 @@ def main() -> None:
 
     if args.command == "init-db":
         with Database.from_env() as db:
-            db.execute_sql_file(Path("sql/001_init.sql"))
+            for sql_file in sorted(Path("sql").glob("*.sql")):
+                db.execute_sql_file(sql_file)
         return
 
     if args.command == "run":
