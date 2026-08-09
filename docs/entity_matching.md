@@ -7,7 +7,7 @@ repetia su nombre/RUC en cada fila, sin ninguna relacion explicita entre
 ellas -- buscar "todos los procesos de la empresa X" requeria comparar texto,
 fragil ante mayusculas, espacios o variantes de escritura.
 
-`sql/002_supplier_buyer_dimensions.sql` agrega dos tablas de dimension
+`sql/001_init.sql` incluye dos tablas de dimension
 (`mart.suppliers`, `mart.buyers`) con un ID propio, y una columna
 `supplier_id` / `buyer_id` en las tablas de detalle que las referencia.
 
