@@ -1,0 +1,189 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MIRA: Instalar proyecto",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/install.sh",
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}\\scripts\\install.ps1"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MIRA: Ejecutar todas las pruebas",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/run_tests.sh",
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}\\scripts\\run_tests.ps1"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MIRA: Inicializar base de datos",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/init_db.sh",
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}\\scripts\\init_db.ps1"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MIRA: Ejecutar un país",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/run_etl.sh",
+      "args": [
+        "${input:source}",
+        "${input:period}"
+      ],
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}\\scripts\\run_etl.ps1",
+          "-Source",
+          "${input:source}",
+          "-Period",
+          "${input:period}"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MIRA: Ejecutar un país (prueba limitada)",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/run_etl.sh",
+      "args": [
+        "${input:source}",
+        "${input:period}",
+        "${input:limit}"
+      ],
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}\\scripts\\run_etl.ps1",
+          "-Source",
+          "${input:source}",
+          "-Period",
+          "${input:period}",
+          "-Limit",
+          "${input:limit}"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MIRA: Cadena completa",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/run_chain.sh",
+      "args": [
+        "${input:gtPeriod}",
+        "${input:crPeriod}"
+      ],
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}\\scripts\\run_chain.ps1",
+          "-GuatemalaPeriod",
+          "${input:gtPeriod}",
+          "-CostaRicaPeriod",
+          "${input:crPeriod}"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MIRA: Cadena completa (prueba limitada)",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/run_chain.sh",
+      "args": [
+        "${input:gtPeriod}",
+        "${input:crPeriod}",
+        "${input:limit}"
+      ],
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}\\scripts\\run_chain.ps1",
+          "-GuatemalaPeriod",
+          "${input:gtPeriod}",
+          "-CostaRicaPeriod",
+          "${input:crPeriod}",
+          "-Limit",
+          "${input:limit}"
+        ]
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "source",
+      "type": "pickString",
+      "description": "País/fuente que deseas cargar",
+      "options": [
+        "guatemala_guatecompras",
+        "costa_rica_sicop",
+        "nicaragua_siscae"
+      ],
+      "default": "guatemala_guatecompras"
+    },
+    {
+      "id": "period",
+      "type": "promptString",
+      "description": "Período YYYYMM (en Nicaragua es solo etiqueta de auditoría)"
+    },
+    {
+      "id": "gtPeriod",
+      "type": "promptString",
+      "description": "Período de Guatemala en formato YYYYMM"
+    },
+    {
+      "id": "crPeriod",
+      "type": "promptString",
+      "description": "Período de Costa Rica en formato YYYYMM"
+    },
+    {
+      "id": "limit",
+      "type": "promptString",
+      "description": "Cantidad máxima de registros para la prueba",
+      "default": "2"
+    }
+  ]
+}

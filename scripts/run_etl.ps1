@@ -1,0 +1,31 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("guatemala_guatecompras", "costa_rica_sicop", "nicaragua_siscae")]
+    [string]$Source,
+
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern("^\d{6}$")]
+    [string]$Period,
+
+    [ValidateRange(1, [int]::MaxValue)]
+    [Nullable[int]]$Limit,
+
+    [string]$LocalZip
+)
+
+$ErrorActionPreference = "Stop"
+$ProjectDir = Split-Path -Parent $PSScriptRoot
+Set-Location $ProjectDir
+
+if ($Source -eq "nicaragua_siscae" -and $LocalZip) {
+    throw "Nicaragua reads current HTML and does not accept a local ZIP."
+}
+if (-not (Test-Path .\.venv\Scripts\mira-etl.exe)) {
+    throw "Missing .venv. Run scripts\install.ps1 first."
+}
+
+$Arguments = @("run", "--source", $Source, "--period", $Period)
+if ($null -ne $Limit) { $Arguments += @("--limit", $Limit) }
+if ($LocalZip) { $Arguments += @("--local-zip", $LocalZip) }
+
+& .\.venv\Scripts\mira-etl.exe @Arguments

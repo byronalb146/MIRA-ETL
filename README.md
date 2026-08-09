@@ -25,6 +25,37 @@ python -m venv .venv
 .venv\Scripts\pip install -e .
 ```
 
+## Scripts automatizados
+
+Los scripts individuales están en `scripts/` para Bash (`.sh`) y PowerShell
+(`.ps1`): instalación, pruebas, inicialización de BD y ejecución de un país.
+
+En VS Code no es necesario escribir comandos: abre `Terminal → Run Task` y
+selecciona una tarea `MIRA: ...`. VS Code mostrará menús para escoger el país y
+solicitará los períodos o el límite cuando corresponda.
+
+Para ejecutar toda la cadena con Guatemala y Costa Rica por período, y
+Nicaragua con el estado vigente actual:
+
+```bash
+./scripts/run_chain.sh 202607 202607
+```
+
+```powershell
+.\scripts\run_chain.ps1 -GuatemalaPeriod 202607 -CostaRicaPeriod 202607
+```
+
+El tercer parámetro de Bash, o `-Limit` en PowerShell, limita registros para
+una prueba. Ejemplo:
+
+```bash
+./scripts/run_chain.sh 202607 202607 2
+```
+
+```powershell
+.\scripts\run_chain.ps1 -GuatemalaPeriod 202607 -CostaRicaPeriod 202607 -Limit 2
+```
+
 Ejecutar con ZIP local (Costa Rica):
 
 ```powershell
