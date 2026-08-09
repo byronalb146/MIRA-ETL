@@ -9,6 +9,7 @@ src/mira_etl/env.py
 src/mira_etl/extract.py
 src/mira_etl/extract_ni.py
 src/mira_etl/hashutil.py
+src/mira_etl/matching.py
 src/mira_etl/pipeline.py
 src/mira_etl/transform_cr.py
 src/mira_etl/transform_ni.py

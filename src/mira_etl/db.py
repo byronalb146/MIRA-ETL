@@ -9,6 +9,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from mira_etl.env import load_dotenv
+from mira_etl.matching import normalise_name
 
 
 CORE_SQL = """
@@ -64,25 +65,27 @@ PROCESS_DETAIL_SQL = """
 
 BUYER_DETAIL_SQL = """
     insert into mart.procurement_buyer_details (
-        process_id, buyer_name, buyer_id_source, buyer_tax_id
+        process_id, buyer_name, buyer_id_source, buyer_tax_id, buyer_id
     )
-    values (%s, %s, %s, %s)
+    values (%s, %s, %s, %s, %s)
     on conflict (process_id) do update set
         buyer_name = excluded.buyer_name,
         buyer_id_source = excluded.buyer_id_source,
-        buyer_tax_id = excluded.buyer_tax_id
+        buyer_tax_id = excluded.buyer_tax_id,
+        buyer_id = excluded.buyer_id
 """
 
 SUPPLIER_DETAIL_SQL = """
     insert into mart.procurement_supplier_details (
-        process_id, supplier_name, supplier_id_source, supplier_tax_id, supplier_type
+        process_id, supplier_name, supplier_id_source, supplier_tax_id, supplier_type, supplier_id
     )
-    values (%s, %s, %s, %s, %s)
+    values (%s, %s, %s, %s, %s, %s)
     on conflict (process_id) do update set
         supplier_name = excluded.supplier_name,
         supplier_id_source = excluded.supplier_id_source,
         supplier_tax_id = excluded.supplier_tax_id,
-        supplier_type = excluded.supplier_type
+        supplier_type = excluded.supplier_type,
+        supplier_id = excluded.supplier_id
 """
 
 ITEM_DETAIL_SQL = """
@@ -263,6 +266,203 @@ class Database:
             )
         return len(rows)
 
+    def get_or_create_supplier(
+        self,
+        *,
+        country_code: str,
+        source_system: str,
+        supplier_tax_id: str | None,
+        supplier_id_source: str | None,
+        supplier_name: str | None,
+        supplier_type: str | None,
+    ) -> int | None:
+        """Resolves a supplier to a stable mart.suppliers row, trying three
+        tiers in order of confidence (tax id -> source id -> normalised
+        name) and creating a new row on the first tier that has a value to
+        key on. Returns None only if there is nothing at all to identify the
+        supplier by (no tax id, no source id, no name)."""
+        name_normalised = normalise_name(supplier_name)
+
+        if supplier_tax_id:
+            existing = self.fetch_one(
+                "select supplier_id from mart.suppliers where country_code = %s and supplier_tax_id = %s",
+                (country_code, supplier_tax_id),
+            )
+            if existing:
+                self._touch("mart.suppliers", "supplier_id", existing["supplier_id"])
+                return int(existing["supplier_id"])
+            return self._insert_entity(
+                "mart.suppliers", "supplier_id",
+                country_code=country_code, source_system=source_system,
+                tax_id_column="supplier_tax_id", tax_id=supplier_tax_id,
+                id_source_column="supplier_id_source", id_source=supplier_id_source,
+                name_column="supplier_name", name=supplier_name, name_normalised=name_normalised,
+                extra_columns={"supplier_type": supplier_type},
+                match_method="TAX_ID",
+            )
+
+        if supplier_id_source:
+            existing = self.fetch_one(
+                """select supplier_id from mart.suppliers
+                   where country_code = %s and source_system = %s and supplier_id_source = %s""",
+                (country_code, source_system, supplier_id_source),
+            )
+            if existing:
+                self._touch("mart.suppliers", "supplier_id", existing["supplier_id"])
+                return int(existing["supplier_id"])
+            return self._insert_entity(
+                "mart.suppliers", "supplier_id",
+                country_code=country_code, source_system=source_system,
+                tax_id_column="supplier_tax_id", tax_id=None,
+                id_source_column="supplier_id_source", id_source=supplier_id_source,
+                name_column="supplier_name", name=supplier_name, name_normalised=name_normalised,
+                extra_columns={"supplier_type": supplier_type},
+                match_method="SOURCE_ID",
+            )
+
+        if name_normalised:
+            existing = self.fetch_one(
+                "select supplier_id from mart.suppliers where country_code = %s and name_normalised = %s",
+                (country_code, name_normalised),
+            )
+            if existing:
+                self._touch("mart.suppliers", "supplier_id", existing["supplier_id"])
+                return int(existing["supplier_id"])
+            return self._insert_entity(
+                "mart.suppliers", "supplier_id",
+                country_code=country_code, source_system=source_system,
+                tax_id_column="supplier_tax_id", tax_id=None,
+                id_source_column="supplier_id_source", id_source=None,
+                name_column="supplier_name", name=supplier_name, name_normalised=name_normalised,
+                extra_columns={"supplier_type": supplier_type},
+                match_method="NAME_EXACT_NORMALISED",
+            )
+
+        if not supplier_name:
+            return None  # nothing at all to key on -- leave supplier_id NULL rather than guess
+
+        return self._insert_entity(
+            "mart.suppliers", "supplier_id",
+            country_code=country_code, source_system=source_system,
+            tax_id_column="supplier_tax_id", tax_id=None,
+            id_source_column="supplier_id_source", id_source=None,
+            name_column="supplier_name", name=supplier_name, name_normalised=None,
+            extra_columns={"supplier_type": supplier_type},
+            match_method="UNMATCHED",
+        )
+
+    def get_or_create_buyer(
+        self,
+        *,
+        country_code: str,
+        source_system: str,
+        buyer_tax_id: str | None,
+        buyer_id_source: str | None,
+        buyer_name: str | None,
+    ) -> int | None:
+        """Same three-tier resolution as get_or_create_supplier, for buyers."""
+        name_normalised = normalise_name(buyer_name)
+
+        if buyer_tax_id:
+            existing = self.fetch_one(
+                "select buyer_id from mart.buyers where country_code = %s and buyer_tax_id = %s",
+                (country_code, buyer_tax_id),
+            )
+            if existing:
+                self._touch("mart.buyers", "buyer_id", existing["buyer_id"])
+                return int(existing["buyer_id"])
+            return self._insert_entity(
+                "mart.buyers", "buyer_id",
+                country_code=country_code, source_system=source_system,
+                tax_id_column="buyer_tax_id", tax_id=buyer_tax_id,
+                id_source_column="buyer_id_source", id_source=buyer_id_source,
+                name_column="buyer_name", name=buyer_name, name_normalised=name_normalised,
+                extra_columns={}, match_method="TAX_ID",
+            )
+
+        if buyer_id_source:
+            existing = self.fetch_one(
+                """select buyer_id from mart.buyers
+                   where country_code = %s and source_system = %s and buyer_id_source = %s""",
+                (country_code, source_system, buyer_id_source),
+            )
+            if existing:
+                self._touch("mart.buyers", "buyer_id", existing["buyer_id"])
+                return int(existing["buyer_id"])
+            return self._insert_entity(
+                "mart.buyers", "buyer_id",
+                country_code=country_code, source_system=source_system,
+                tax_id_column="buyer_tax_id", tax_id=None,
+                id_source_column="buyer_id_source", id_source=buyer_id_source,
+                name_column="buyer_name", name=buyer_name, name_normalised=name_normalised,
+                extra_columns={}, match_method="SOURCE_ID",
+            )
+
+        if name_normalised:
+            existing = self.fetch_one(
+                "select buyer_id from mart.buyers where country_code = %s and name_normalised = %s",
+                (country_code, name_normalised),
+            )
+            if existing:
+                self._touch("mart.buyers", "buyer_id", existing["buyer_id"])
+                return int(existing["buyer_id"])
+            return self._insert_entity(
+                "mart.buyers", "buyer_id",
+                country_code=country_code, source_system=source_system,
+                tax_id_column="buyer_tax_id", tax_id=None,
+                id_source_column="buyer_id_source", id_source=None,
+                name_column="buyer_name", name=buyer_name, name_normalised=name_normalised,
+                extra_columns={}, match_method="NAME_EXACT_NORMALISED",
+            )
+
+        if not buyer_name:
+            return None
+
+        return self._insert_entity(
+            "mart.buyers", "buyer_id",
+            country_code=country_code, source_system=source_system,
+            tax_id_column="buyer_tax_id", tax_id=None,
+            id_source_column="buyer_id_source", id_source=None,
+            name_column="buyer_name", name=buyer_name, name_normalised=None,
+            extra_columns={}, match_method="UNMATCHED",
+        )
+
+    def _insert_entity(
+        self,
+        table: str,
+        id_column: str,
+        *,
+        country_code: str,
+        source_system: str,
+        tax_id_column: str,
+        tax_id: str | None,
+        id_source_column: str,
+        id_source: str | None,
+        name_column: str,
+        name: str | None,
+        name_normalised: str | None,
+        extra_columns: dict[str, Any],
+        match_method: str,
+    ) -> int:
+        columns = [
+            "country_code", "source_system", tax_id_column, id_source_column,
+            name_column, "name_normalised", "match_method", *extra_columns.keys(),
+        ]
+        values = [
+            country_code, source_system, tax_id, id_source,
+            name, name_normalised, match_method, *extra_columns.values(),
+        ]
+        placeholders = ", ".join(["%s"] * len(values))
+        row = self.fetch_one(
+            f"insert into {table} ({', '.join(columns)}) values ({placeholders}) returning {id_column}",
+            tuple(values),
+        )
+        assert row is not None
+        return int(row[id_column])
+
+    def _touch(self, table: str, id_column: str, entity_id: int) -> None:
+        self.execute(f"update {table} set last_seen_at = now() where {id_column} = %s", (entity_id,))
+
     def upsert_mart_split_records(self, records: Iterable[dict[str, Any]]) -> int:
         record_list = list(records)
         if not record_list:
@@ -294,8 +494,25 @@ class Database:
                     record.get("currency_code"),
                 )
             )
+
+            buyer_id = self.get_or_create_buyer(
+                country_code=record["country_code"],
+                source_system=record["source_system"],
+                buyer_tax_id=record.get("buyer_tax_id"),
+                buyer_id_source=record.get("buyer_id_source"),
+                buyer_name=record.get("buyer_name"),
+            )
             buyer_rows.append(
-                (process_id, record.get("buyer_name"), record.get("buyer_id_source"), record.get("buyer_tax_id"))
+                (process_id, record.get("buyer_name"), record.get("buyer_id_source"), record.get("buyer_tax_id"), buyer_id)
+            )
+
+            supplier_id = self.get_or_create_supplier(
+                country_code=record["country_code"],
+                source_system=record["source_system"],
+                supplier_tax_id=record.get("supplier_tax_id"),
+                supplier_id_source=record.get("supplier_id_source"),
+                supplier_name=record.get("supplier_name"),
+                supplier_type=record.get("supplier_type"),
             )
             supplier_rows.append(
                 (
@@ -304,6 +521,7 @@ class Database:
                     record.get("supplier_id_source"),
                     record.get("supplier_tax_id"),
                     record.get("supplier_type"),
+                    supplier_id,
                 )
             )
             item_rows.append(
