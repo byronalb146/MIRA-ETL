@@ -586,30 +586,67 @@ async function main() {
     db: { schema: "mart" },
   });
 
-  const { data, error } = await supabase
-    .from("procurement_record_core")
-    .select(`
-      process_id, country_code,
-      mart_process_details:procurement_process_details(process_number, procurement_method, process_status, source_status, publication_date, closing_date, title, awarded_amount, currency_code),
-      mart_buyer_details:procurement_buyer_details(buyer_name),
-      mart_supplier_details:procurement_supplier_details(supplier_name),
-      mart_item_details:procurement_item_details(category_source)
-    `)
-    .order("extracted_at", { ascending: false })
-    .limit(600);
+  const RECORDS_PER_COUNTRY = 250;
 
-  if (error) {
+  // Paso 1: qué países tienen datos, sin que el límite de una sola consulta
+  // deje a unos fuera por el volumen de otros (ej. Guatemala con muchos más
+  // registros que Nicaragua/Costa Rica). Esta consulta es liviana (una sola
+  // columna, sin joins), así que puede traer bastantes filas sin problema.
+  const { data: countryRows, error: countryError } = await supabase
+    .from("procurement_record_core")
+    .select("country_code")
+    .limit(20000);
+
+  if (countryError) {
     document.getElementById("records-container").innerHTML = `
       <div class="state-block">
         <h3>No se pudo conectar a la base de datos</h3>
-        <p>${escapeHtml(error.message)}</p>
+        <p>${escapeHtml(countryError.message)}</p>
         <p>Revisa que el esquema <code class="inline">mart</code> esté en "Exposed schemas" (Project Settings → API) y que corriste <code class="inline">sql/003_public_read_access.sql</code>.</p>
       </div>`;
     return;
   }
 
-  const allRecords = data || [];
-  const liveCountries = new Set(allRecords.map(r => r.country_code).filter(Boolean));
+  const liveCountries = new Set((countryRows || []).map(r => r.country_code).filter(Boolean));
+  const countryTotals = {};
+  (countryRows || []).forEach(r => {
+    if (!r.country_code) return;
+    countryTotals[r.country_code] = (countryTotals[r.country_code] || 0) + 1;
+  });
+
+  // Paso 2: una consulta POR PAÍS con su propio límite, para que cada uno
+  // tenga garantizado su propio espacio en la lista en vez de competir por
+  // un único límite combinado.
+  const selectColumns = `
+    process_id, country_code,
+    mart_process_details:procurement_process_details(process_number, procurement_method, process_status, source_status, publication_date, closing_date, title, awarded_amount, currency_code),
+    mart_buyer_details:procurement_buyer_details(buyer_name),
+    mart_supplier_details:procurement_supplier_details(supplier_name),
+    mart_item_details:procurement_item_details(category_source)
+  `;
+
+  const perCountryResults = await Promise.all(
+    [...liveCountries].map(code =>
+      supabase
+        .from("procurement_record_core")
+        .select(selectColumns)
+        .eq("country_code", code)
+        .order("extracted_at", { ascending: false })
+        .limit(RECORDS_PER_COUNTRY)
+    )
+  );
+
+  const fetchErrors = perCountryResults.map(r => r.error).filter(Boolean);
+  if (fetchErrors.length > 0) {
+    document.getElementById("records-container").innerHTML = `
+      <div class="state-block">
+        <h3>No se pudo conectar a la base de datos</h3>
+        <p>${escapeHtml(fetchErrors[0].message)}</p>
+      </div>`;
+    return;
+  }
+
+  const allRecords = perCountryResults.flatMap(r => r.data || []);
 
   document.getElementById("stat-countries").innerHTML = `${liveCountries.size}<span style="font-size:1.4rem;">/6</span>`;
 
@@ -648,16 +685,30 @@ async function main() {
       new Set(filtered.map(r => r.mart_buyer_details?.buyer_name).filter(Boolean)).size;
 
     const note = document.getElementById("country-filter-note");
+    const noteParts = [];
     if (selectedCountry) {
       const name = COUNTRY_ORDER.find(c => c.code === selectedCountry)?.name || selectedCountry;
+      noteParts.push(`Mostrando solo <strong>${escapeHtml(name)}</strong> · <a href="#" id="clear-country" style="color:var(--isthmus-light);text-decoration:underline;">ver todos los países</a>`);
+    }
+    const truncated = Object.entries(countryTotals).filter(([code, total]) =>
+      total > RECORDS_PER_COUNTRY && (!selectedCountry || selectedCountry === code)
+    );
+    if (truncated.length > 0) {
+      const names = truncated.map(([code, total]) => `${code} (${total} en total, mostrando ${RECORDS_PER_COUNTRY})`).join(", ");
+      noteParts.push(`Mostrando una muestra de los más recientes: ${names}.`);
+    }
+    if (noteParts.length > 0) {
       note.style.display = "block";
-      note.innerHTML = `Mostrando solo <strong>${escapeHtml(name)}</strong> · <a href="#" id="clear-country" style="color:var(--isthmus-light);text-decoration:underline;">ver todos los países</a>`;
-      document.getElementById("clear-country").addEventListener("click", (e) => {
-        e.preventDefault();
-        selectedCountry = null;
-        repaintIsthmus();
-        applyFilters();
-      });
+      note.innerHTML = noteParts.join(" · ");
+      const clearLink = document.getElementById("clear-country");
+      if (clearLink) {
+        clearLink.addEventListener("click", (e) => {
+          e.preventDefault();
+          selectedCountry = null;
+          repaintIsthmus();
+          applyFilters();
+        });
+      }
     } else {
       note.style.display = "none";
     }
