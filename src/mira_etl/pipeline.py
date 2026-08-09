@@ -102,12 +102,14 @@ def obtain_source_rows(
         from mira_etl.extract_html import scrape_siscae
 
         source_rows = scrape_siscae(period, limit=limit)
+        source_counts = {name: len(rows) for name, rows in source_rows.items()}
         hashes = {name: rows_hash(rows) for name, rows in source_rows.items()}
     elif download_type == "http_zip_csv":
         zip_path = obtain_zip(config, period, work_dir, local_zip)
         extract_dir = extract_zip(zip_path, work_dir, config.source, period)
         validate_required_files(config, extract_dir)
         source_rows = {}
+        source_counts = {}
         hashes = {}
         filenames = config.files["required"] + config.files.get("optional", [])
         for filename in filenames:
@@ -121,12 +123,20 @@ def obtain_source_rows(
                     encoding=config.encoding,
                 )
             )
+            source_counts[filename] = len(source_rows[filename])
             hashes[filename] = file_hash(csv_path)
         source_rows = filter_source_rows_for_mart(config.source, source_rows)
     else:
         raise ValueError(f"Unsupported download type: {download_type}")
 
     for dataset_name, rows in source_rows.items():
+        report_dataset_size(
+            label=dataset_name,
+            unit_singular="fila",
+            unit_plural="filas",
+            found_count=source_counts[dataset_name],
+            work_count=len(rows[:limit] if limit is not None else rows),
+        )
         source_file_id = db.insert_source_file(
             run_id=run_id,
             source=config.source,
@@ -262,6 +272,10 @@ def process_json_records(
     )
     batch_size = config.batch_size
     record_limit = limit if limit is not None else config.record_limit
+    print(
+        f"JSON {json_path.name}: procesamiento por streaming en lotes de "
+        f"{batch_size:,} items."
+    )
     raw_batch: list[dict[str, Any]] = []
     record_batch: list[dict[str, Any]] = []
     totals = {"raw": 0, "staging": 0, "validations": 0, "mart": 0}
@@ -284,6 +298,7 @@ def process_json_records(
                     db=db, run_id=run_id, source_file_id=source_file_id,
                     source=config.source, period=period, raw_batch=raw_batch,
                     record_batch=record_batch, batch_size=batch_size, totals=totals,
+                    dataset_name=json_path.name,
                 )
             if record_limit is not None and totals["raw"] + len(raw_batch) >= record_limit:
                 break
@@ -293,8 +308,10 @@ def process_json_records(
             db=db, run_id=run_id, source_file_id=source_file_id,
             source=config.source, period=period, raw_batch=raw_batch,
             record_batch=record_batch, batch_size=batch_size, totals=totals,
+            dataset_name=json_path.name,
         )
 
+    print(f"JSON {json_path.name}: {totals['raw']:,} items trabajados.")
     db.update_source_file_row_count(source_file_id, totals["raw"])
     insert_row_count(db, run_id, "raw", "source_rows", totals["raw"])
     insert_row_count(db, run_id, "staging", "normalized_candidates", totals["staging"])
@@ -328,8 +345,17 @@ def flush_record_batch(
     *, db: Database, run_id: int, source_file_id: int, source: str,
     period: str, raw_batch: list[dict[str, Any]],
     record_batch: list[dict[str, Any]], batch_size: int,
-    totals: dict[str, int],
+    totals: dict[str, int], dataset_name: str | None = None,
 ) -> None:
+    if dataset_name is not None:
+        start = totals["raw"] + 1
+        end = totals["raw"] + len(raw_batch)
+        found_word = "encontrado" if len(raw_batch) == 1 else "encontrados"
+        print(
+            f"JSON {dataset_name}: "
+            f"{format_quantity(len(raw_batch), 'item', 'items')} {found_word}; "
+            f"se trabajaran ahora filas {start:,}-{end:,}."
+        )
     db.insert_raw_rows(
         run_id=run_id, source_file_id=source_file_id, rows=raw_batch,
         batch_size=batch_size, start_row_number=totals["raw"] + 1,
@@ -359,6 +385,27 @@ def insert_row_count(
         table_name=table_name,
         row_count=row_count,
     )
+
+
+def report_dataset_size(
+    *,
+    label: str,
+    unit_singular: str,
+    unit_plural: str,
+    found_count: int,
+    work_count: int,
+) -> None:
+    found_word = "encontrada" if found_count == 1 else "encontradas"
+    print(
+        f"Archivo {label}: "
+        f"{format_quantity(found_count, unit_singular, unit_plural)} {found_word}; "
+        f"se trabajaran ahora {work_count:,}."
+    )
+
+
+def format_quantity(count: int, singular: str, plural: str) -> str:
+    unit = singular if count == 1 else plural
+    return f"{count:,} {unit}"
 
 
 def find_json_file(extract_dir: Path) -> Path:
