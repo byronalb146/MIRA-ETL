@@ -13,7 +13,6 @@ fi
 gt_period="$1"
 cr_period="$2"
 limit="${3:-}"
-current_period="$(date +%Y%m)"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ ! "$gt_period" =~ ^[0-9]{6}$ || ! "$cr_period" =~ ^[0-9]{6}$ ]]; then
@@ -30,6 +29,6 @@ fi
 "$script_dir/init_db.sh"
 "$script_dir/run_etl.sh" guatemala_guatecompras "$gt_period" "$limit"
 "$script_dir/run_etl.sh" costa_rica_sicop "$cr_period" "$limit"
-"$script_dir/run_etl.sh" nicaragua_siscae "$current_period" "$limit"
+"$script_dir/run_etl.sh" nicaragua_siscae "$limit"
 
 echo "Installation, tests, database initialization and all three ETLs completed."

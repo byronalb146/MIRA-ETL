@@ -74,6 +74,27 @@
       "problemMatcher": []
     },
     {
+      "label": "MIRA: Ejecutar Nicaragua",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/run_etl.sh",
+      "args": [
+        "nicaragua_siscae"
+      ],
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}\\scripts\\run_etl.ps1",
+          "-Source",
+          "nicaragua_siscae"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "MIRA: Ejecutar un país (prueba limitada)",
       "type": "process",
       "command": "${workspaceFolder}/scripts/run_etl.sh",
@@ -94,6 +115,30 @@
           "${input:source}",
           "-Period",
           "${input:period}",
+          "-Limit",
+          "${input:limit}"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MIRA: Ejecutar Nicaragua (prueba limitada)",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/run_etl.sh",
+      "args": [
+        "nicaragua_siscae",
+        "${input:limit}"
+      ],
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}\\scripts\\run_etl.ps1",
+          "-Source",
+          "nicaragua_siscae",
           "-Limit",
           "${input:limit}"
         ]
@@ -159,15 +204,14 @@
       "description": "País/fuente que deseas cargar",
       "options": [
         "guatemala_guatecompras",
-        "costa_rica_sicop",
-        "nicaragua_siscae"
+        "costa_rica_sicop"
       ],
       "default": "guatemala_guatecompras"
     },
     {
       "id": "period",
       "type": "promptString",
-      "description": "Período YYYYMM (en Nicaragua es solo etiqueta de auditoría)"
+      "description": "Período YYYYMM"
     },
     {
       "id": "gtPeriod",

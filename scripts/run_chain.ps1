@@ -12,7 +12,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$CurrentPeriod = Get-Date -Format "yyyyMM"
 $LimitArguments = @{}
 if ($null -ne $Limit) { $LimitArguments["Limit"] = $Limit }
 
@@ -21,6 +20,6 @@ if ($null -ne $Limit) { $LimitArguments["Limit"] = $Limit }
 & "$PSScriptRoot\init_db.ps1"
 & "$PSScriptRoot\run_etl.ps1" -Source guatemala_guatecompras -Period $GuatemalaPeriod @LimitArguments
 & "$PSScriptRoot\run_etl.ps1" -Source costa_rica_sicop -Period $CostaRicaPeriod @LimitArguments
-& "$PSScriptRoot\run_etl.ps1" -Source nicaragua_siscae -Period $CurrentPeriod @LimitArguments
+& "$PSScriptRoot\run_etl.ps1" -Source nicaragua_siscae @LimitArguments
 
 Write-Host "Installation, tests, database initialization and all three ETLs completed."

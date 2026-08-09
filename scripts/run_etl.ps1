@@ -3,7 +3,6 @@ param(
     [ValidateSet("guatemala_guatecompras", "costa_rica_sicop", "nicaragua_siscae")]
     [string]$Source,
 
-    [Parameter(Mandatory = $true)]
     [ValidatePattern("^\d{6}$")]
     [string]$Period,
 
@@ -20,11 +19,15 @@ Set-Location $ProjectDir
 if ($Source -eq "nicaragua_siscae" -and $LocalZip) {
     throw "Nicaragua reads current HTML and does not accept a local ZIP."
 }
+if ($Source -ne "nicaragua_siscae" -and -not $Period) {
+    throw "Period is required for historical ZIP/JSON sources."
+}
 if (-not (Test-Path .\.venv\Scripts\mira-etl.exe)) {
     throw "Missing .venv. Run scripts\install.ps1 first."
 }
 
-$Arguments = @("run", "--source", $Source, "--period", $Period)
+$Arguments = @("run", "--source", $Source)
+if ($Period) { $Arguments += @("--period", $Period) }
 if ($null -ne $Limit) { $Arguments += @("--limit", $Limit) }
 if ($LocalZip) { $Arguments += @("--local-zip", $LocalZip) }
 

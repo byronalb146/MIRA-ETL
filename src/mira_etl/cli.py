@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
+from mira_etl.config import SourceConfig
 from mira_etl.db import Database
 from mira_etl.pipeline import run_pipeline
 
@@ -17,7 +19,7 @@ def main() -> None:
         required=True,
         help="Source configuration name.",
     )
-    run.add_argument("--period", required=True, help="Period in AAAAMM format.")
+    run.add_argument("--period", default=None, help="Period in AAAAMM format.")
     run.add_argument("--local-zip", type=Path, default=None)
     run.add_argument("--work-dir", type=Path, default=Path("data/work"))
     run.add_argument("--config-dir", type=Path, default=Path("config/sources"))
@@ -41,14 +43,30 @@ def main() -> None:
         return
 
     if args.command == "run":
-        run_pipeline(
+        period = resolve_period(
             source=args.source,
             period=args.period,
+            config_dir=args.config_dir,
+        )
+        run_pipeline(
+            source=args.source,
+            period=period,
             config_dir=args.config_dir,
             work_dir=args.work_dir,
             local_zip=args.local_zip,
             limit=args.limit,
         )
+
+
+def resolve_period(*, source: str, period: str | None, config_dir: Path) -> str:
+    if period:
+        return period
+
+    config = SourceConfig.load(config_dir, source)
+    if config.download.get("type") == "html_session_scrape":
+        return datetime.now().strftime("%Y%m")
+
+    raise SystemExit("--period is required for historical ZIP/JSON sources.")
 
 
 if __name__ == "__main__":

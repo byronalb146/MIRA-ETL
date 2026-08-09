@@ -70,12 +70,12 @@ $env:SUPABASE_DB_URL="postgresql://..."
 .venv\Scripts\mira-etl run --source costa_rica_sicop --period 202001
 ```
 
-Ejecutar el conector de Nicaragua (no usa `--local-zip`; `--period` es solo una
-etiqueta de la corrida, SISCAE siempre trae el estado actual):
+Ejecutar el conector de Nicaragua (no usa `--local-zip` ni `--period`; SISCAE
+siempre trae el estado vigente al momento de ejecutar):
 
 ```powershell
 $env:SUPABASE_DB_URL="postgresql://..."
-.venv\Scripts\mira-etl run --source nicaragua_siscae --period 202607
+.venv\Scripts\mira-etl run --source nicaragua_siscae
 ```
 
 Las fuentes `http_zip_json` se leen incrementalmente con `ijson` y se cargan en
@@ -91,8 +91,8 @@ registros durante pruebas puntuales.
 
 Cada país se ejecuta individualmente. Guatemala y Costa Rica usan `--period`
 para seleccionar la descarga histórica. Nicaragua es un flujo separado: SISCAE
-solo expone el estado vigente al momento de ejecutar, por lo que allí `--period`
-se guarda únicamente como etiqueta de auditoría y no solicita datos históricos.
+solo expone el estado vigente al momento de ejecutar, por lo que el ETL etiqueta
+la corrida automáticamente con el mes actual.
 
 Crear esquemas/tablas:
 
