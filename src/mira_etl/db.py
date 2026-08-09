@@ -136,6 +136,15 @@ class Database:
             cur.execute(sql, params)
             return cur.fetchone()
 
+    def fetch_all(
+        self,
+        sql: str,
+        params: tuple[Any, ...] = (),
+    ) -> list[dict[str, Any]]:
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            return list(cur.fetchall())
+
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None:
         with self.conn.cursor() as cur:
             cur.execute(sql, params)

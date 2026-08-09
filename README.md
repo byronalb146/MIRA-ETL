@@ -90,3 +90,61 @@ n8n / manual
      raw -> staging -> mart -> audit
 ```
 
+## API
+
+La API es de solo lectura y consulta exclusivamente el modelo normalizado de
+`mart`. Requiere la misma variable de conexión que el ETL:
+
+```bash
+export SUPABASE_DB_URL="postgresql://..."
+```
+
+Instala las dependencias:
+
+```bash
+python -m pip install -e .
+```
+
+En una base existente, aplica únicamente `sql/004_procurements_web_view.sql`
+desde el SQL Editor de Supabase o con `psql`; no es necesario recrear tablas:
+
+```bash
+psql "$SUPABASE_DB_URL" -f sql/004_procurements_web_view.sql
+```
+
+Levanta el servidor local:
+
+```bash
+uvicorn mira_etl.api.main:app --reload
+```
+
+La página de `web/index.html` se sirve desde la misma aplicación. Ábrela en:
+
+```text
+http://localhost:8000/
+```
+
+La web consulta la API y permite navegar por país con páginas de 10, 25 o 50
+registros. También ofrece búsqueda local y filtro de estado sobre la página
+actual; ya no necesita una URL ni una llave pública de Supabase.
+
+Verifica el servicio:
+
+```bash
+curl "http://localhost:8000/api/v1/health"
+```
+
+Consulta los 20 registros más recientes:
+
+```bash
+curl "http://localhost:8000/api/v1/procurements?limit=20"
+```
+
+Consulta Guatemala con paginación:
+
+```bash
+curl "http://localhost:8000/api/v1/procurements?country=GT&limit=20&offset=0"
+```
+
+La documentación interactiva queda disponible en
+`http://localhost:8000/docs`.

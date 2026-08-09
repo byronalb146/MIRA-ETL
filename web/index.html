@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   :root {
     --ink: #16232B;
@@ -112,6 +111,11 @@
     box-shadow: 0 0 0 3px var(--quetzal-soft);
   }
   .isthmus-node:hover .isthmus-dot { transform: scale(1.25); }
+  .isthmus-node.live { cursor: pointer; }
+  .isthmus-node.selected .isthmus-dot {
+    outline: 2px solid var(--maize);
+    outline-offset: 3px;
+  }
   .isthmus-code {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.62rem;
@@ -225,12 +229,100 @@
   }
   select.status-filter:focus { border-color: var(--isthmus-light); }
 
+  .control-group {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .control-label {
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .results-summary {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 12px;
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+  }
+
   /* ---------- Record list ---------- */
   main.records {
     max-width: 1100px;
     margin: 0 auto;
     padding: 8px 24px 100px;
   }
+  .table-shell {
+    overflow-x: auto;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  .procurement-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 880px;
+  }
+  .procurement-table th {
+    padding: 13px 16px;
+    text-align: left;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.67rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    background: rgba(14, 63, 92, 0.035);
+    border-bottom: 1px solid var(--line);
+  }
+  .procurement-table td {
+    padding: 15px 16px;
+    vertical-align: top;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+  .procurement-table tbody tr:last-child td { border-bottom: 0; }
+  .procurement-table tbody tr:hover { background: rgba(14, 63, 92, 0.025); }
+  .table-title {
+    font-family: 'Fraunces', serif;
+    font-size: 0.98rem;
+    font-weight: 500;
+    max-width: 36ch;
+  }
+  .table-muted { color: var(--ink-soft); font-size: 0.78rem; }
+  .country-pill {
+    display: inline-block;
+    padding: 3px 7px;
+    border-radius: 4px;
+    background: rgba(14, 63, 92, 0.08);
+    color: var(--isthmus);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+  }
+  .pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-top: 16px;
+    padding: 12px 2px;
+  }
+  .pagination-info { color: var(--ink-soft); font-size: 0.84rem; }
+  .pagination-actions { display: flex; gap: 8px; }
+  .page-button {
+    border: 1px solid var(--line);
+    background: var(--paper-raised);
+    color: var(--isthmus);
+    border-radius: 7px;
+    padding: 9px 14px;
+    font-family: 'Public Sans', sans-serif;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .page-button:hover:not(:disabled) { border-color: var(--isthmus-light); }
+  .page-button:disabled { opacity: 0.4; cursor: not-allowed; }
   .record-card {
     background: var(--paper-raised);
     border: 1px solid var(--line);
@@ -375,25 +467,35 @@
   <div class="hero-stats">
     <div>
       <div class="stat-number" id="stat-total">—</div>
-      <div class="stat-label">Procesos cargados actualmente (Nicaragua, procesos vigentes)</div>
+      <div class="stat-label">Procesos recientes mostrados actualmente</div>
     </div>
     <div>
       <div class="stat-number" id="stat-institutions">—</div>
-      <div class="stat-label">Instituciones compradoras distintas</div>
+      <div class="stat-label">Instituciones distintas en la página actual</div>
     </div>
     <div>
-      <div class="stat-number">1<span style="font-size:1.4rem;">/6</span></div>
-      <div class="stat-label">Países con datos en vivo — el resto, próximamente</div>
+      <div class="stat-number"><span id="stat-countries">—</span><span style="font-size:1.4rem;">/6</span></div>
+      <div class="stat-label">Países con datos disponibles</div>
     </div>
   </div>
 </section>
 
 <div class="controls">
-  <input class="search-input" id="search" type="text" placeholder="Buscar por institución, número de proceso o descripción…" />
+  <input class="search-input" id="search" type="text" placeholder="Buscar dentro de esta página…" />
   <select class="status-filter" id="status-filter">
     <option value="">Todos los estados</option>
   </select>
+  <div class="control-group">
+    <span class="control-label">Mostrar</span>
+    <select class="status-filter" id="page-size">
+      <option value="10">10</option>
+      <option value="25">25</option>
+      <option value="50">50</option>
+    </select>
+  </div>
 </div>
+
+<div class="results-summary" id="results-summary">Preparando resultados…</div>
 
 <main class="records" id="records-container">
   <div class="state-block" id="state-loading">
@@ -411,19 +513,13 @@
 </footer>
 
 <script>
-// ---------------------------------------------------------------------
-// Configuración — reemplaza con los valores de tu proyecto de Supabase
-// (Project Settings → API). SUPABASE_ANON_KEY es la llave pública
-// ("anon" / "publishable"), NUNCA la contraseña de la base de datos.
-// ---------------------------------------------------------------------
-const SUPABASE_URL = "https://xbjcfccxencwkdybyxkz.supabase.co";
-const SUPABASE_ANON_KEY = "PEGA_AQUI_TU_ANON_KEY";
+const API_BASE_URL = "/api/v1";
 
 const COUNTRIES = [
   { code: "GT", name: "Guatemala", live: false },
   { code: "HN", name: "Honduras", live: false },
   { code: "SV", name: "El Salvador", live: false },
-  { code: "NI", name: "Nicaragua", live: true },
+  { code: "NI", name: "Nicaragua", live: false },
   { code: "CR", name: "Costa Rica", live: false },
   { code: "PA", name: "Panamá", live: false },
 ];
@@ -442,12 +538,12 @@ const STATUS_TONES = {
   CANCELLED: "warning", DESERTED: "warning", SUSPENDED: "warning",
 };
 
-function renderIsthmusStrip(el) {
+function renderIsthmusStrip(el, liveCountries = new Set()) {
   el.innerHTML = COUNTRIES.map(c => `
-    <div class="isthmus-node ${c.live ? 'live' : ''}">
+    <div class="isthmus-node ${liveCountries.has(c.code) ? 'live' : ''}" data-country="${c.code}">
       <span class="isthmus-dot"></span>
       <span class="isthmus-code">${c.code}</span>
-      <span class="isthmus-tooltip">${c.name}${c.live ? ' · en vivo' : ' · próximamente'}</span>
+      <span class="isthmus-tooltip">${c.name}${liveCountries.has(c.code) ? ' · con datos' : ' · sin datos'}</span>
     </div>
   `).join("");
 }
@@ -463,7 +559,7 @@ function escapeHtml(s) {
   return (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function renderRecords(records) {
+function renderRecords(records, pagination) {
   const container = document.getElementById("records-container");
 
   if (records.length === 0) {
@@ -475,101 +571,216 @@ function renderRecords(records) {
     return;
   }
 
-  container.innerHTML = records.map(r => {
-    const detail = r.mart_process_details || {};
-    const buyer = r.mart_buyer_details || {};
-    const item = r.mart_item_details || {};
-    const statusLabel = STATUS_LABELS[detail.process_status] || detail.source_status || "Sin estado";
-    const pub = formatDate(detail.publication_date);
-    const close = formatDate(detail.closing_date);
-
+  const rows = records.map(r => {
+    const buyer = r.buyer || {};
+    const statusLabel = STATUS_LABELS[r.process_status] || r.process_status || "Sin estado";
+    const pub = formatDate(r.publication_date);
+    const amount = r.amounts?.awarded ?? r.amounts?.estimated;
+    const amountLabel = amount == null
+      ? "—"
+      : `${new Intl.NumberFormat("es-GT").format(Number(amount))} ${escapeHtml(r.amounts?.currency || "")}`;
     return `
-      <article class="record-card">
-        <div>
-          <div class="record-method">${escapeHtml(detail.procurement_method || "Tipo no especificado")} · ${escapeHtml(detail.process_number || "s/n")}</div>
-          <h3 class="record-title">${escapeHtml(buyer.buyer_name || "Institución no especificada")}</h3>
-          <div class="record-meta">
-            ${pub ? `<span>Publicado ${pub}</span>` : ""}
-            ${pub && close ? `<span class="dot">·</span>` : ""}
-            ${close ? `<span>Cierra ${close}</span>` : ""}
-          </div>
-          ${item.category_source ? `<span class="record-category">${escapeHtml(item.category_source.split(";")[0])}</span>` : ""}
-        </div>
-        <span class="status-badge" data-tone="${STATUS_TONES[detail.process_status] || 'closed'}">${escapeHtml(statusLabel)}</span>
-      </article>`;
+      <tr>
+        <td><span class="country-pill">${escapeHtml(r.country_code)}</span></td>
+        <td>
+          <div class="table-title">${escapeHtml(r.title || "Proceso sin título")}</div>
+          <div class="table-muted">${escapeHtml(r.process_number || "s/n")}</div>
+        </td>
+        <td>${escapeHtml(buyer.name || "—")}</td>
+        <td>
+          ${escapeHtml(r.procurement_method || "—")}
+          <div class="table-muted">${pub || "Fecha no disponible"}</div>
+        </td>
+        <td>${amountLabel}</td>
+        <td><span class="status-badge" data-tone="${STATUS_TONES[r.process_status] || 'closed'}">${escapeHtml(statusLabel)}</span></td>
+      </tr>`;
   }).join("");
+
+  const currentPage = pagination.pages ? Math.floor(pagination.offset / pagination.limit) + 1 : 0;
+  const first = pagination.total ? pagination.offset + 1 : 0;
+  const last = pagination.offset + pagination.returned;
+  container.innerHTML = `
+    <div class="table-shell">
+      <table class="procurement-table">
+        <thead>
+          <tr>
+            <th>País</th>
+            <th>Proceso</th>
+            <th>Institución</th>
+            <th>Método / publicación</th>
+            <th>Monto</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <div class="pagination-info">Mostrando ${first.toLocaleString("es-GT")}–${last.toLocaleString("es-GT")} de ${pagination.total.toLocaleString("es-GT")} · Página ${currentPage} de ${pagination.pages}</div>
+      <div class="pagination-actions">
+        <button class="page-button" id="page-previous" ${pagination.offset === 0 ? "disabled" : ""}>← Anterior</button>
+        <button class="page-button" id="page-next" ${currentPage >= pagination.pages ? "disabled" : ""}>Siguiente →</button>
+      </div>
+    </div>`;
+
+  document.getElementById("page-previous")?.addEventListener("click", () => changePage(-1));
+  document.getElementById("page-next")?.addEventListener("click", () => changePage(1));
+}
+
+const state = {
+  country: "",
+  status: "",
+  limit: 10,
+  offset: 0,
+  records: [],
+  pagination: { limit: 10, offset: 0, returned: 0, total: 0, pages: 0 },
+};
+
+function setLoading() {
+  document.getElementById("records-container").innerHTML = `
+    <div class="state-block">
+      <div class="spinner"></div>
+      <h3>Cargando procesos</h3>
+      <p>Consultando la API de MIRA.</p>
+    </div>`;
+}
+
+async function loadRecords() {
+  setLoading();
+  const params = new URLSearchParams({
+    limit: String(state.limit),
+    offset: String(state.offset),
+  });
+  if (state.country) params.set("country", state.country);
+  if (state.status) params.set("status", state.status);
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/procurements?${params}`);
+    if (!response.ok) throw new Error(`La API respondió HTTP ${response.status}`);
+    const payload = await response.json();
+    state.records = payload.data || [];
+    state.pagination = payload.pagination;
+  } catch (error) {
+    document.getElementById("records-container").innerHTML = `
+      <div class="state-block">
+        <h3>No se pudo conectar con la API de MIRA</h3>
+        <p>${escapeHtml(error.message)}</p>
+        <p>Confirma que la API esté levantada y que exista la vista <code class="inline">mart.v_procurements_web</code>.</p>
+      </div>`;
+    return;
+  }
+
+  updatePage();
+}
+
+function updatePage() {
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  const filtered = state.records.filter(r => {
+    if (!q) return true;
+    const haystack = [
+      r.process_number,
+      r.title,
+      r.description,
+      r.buyer?.name,
+      r.supplier?.name,
+    ].join(" ").toLowerCase();
+    return haystack.includes(q);
+  });
+  renderRecords(filtered, state.pagination);
+  const countryName = COUNTRIES.find(c => c.code === state.country)?.name || "todos los países";
+  const statusName = STATUS_LABELS[state.status] || "todos los estados";
+  document.getElementById("results-summary").textContent =
+    `${state.pagination.total.toLocaleString("es-GT")} procesos en ${countryName}, ${statusName.toLowerCase()}. La búsqueda filtra la página actual.`;
+  document.getElementById("stat-total").textContent = state.pagination.total.toLocaleString("es-GT");
+  document.getElementById("stat-institutions").textContent =
+    new Set(state.records.map(r => r.buyer?.name).filter(Boolean)).size;
+  document.getElementById("footer-updated").textContent =
+    `${state.pagination.returned} procesos en esta página · actualizado ${new Date().toLocaleString("es-GT")}`;
+}
+
+function changePage(direction) {
+  const nextOffset = state.offset + direction * state.limit;
+  if (nextOffset < 0 || nextOffset >= state.pagination.total) return;
+  state.offset = nextOffset;
+  loadRecords();
+  window.scrollTo({ top: document.querySelector(".controls").offsetTop - 80, behavior: "smooth" });
+}
+
+async function loadCountryAvailability() {
+  const availability = await Promise.all(COUNTRIES.map(async country => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/procurements?country=${country.code}&limit=1`);
+      const payload = response.ok ? await response.json() : null;
+      return payload?.pagination?.total ? country.code : null;
+    } catch {
+      return null;
+    }
+  }));
+  const liveCountries = new Set(availability.filter(Boolean));
+  renderIsthmusStrip(document.getElementById("isthmus-strip-header"), liveCountries);
+  document.getElementById("stat-countries").textContent = liveCountries.size;
+
+  document.querySelectorAll(".isthmus-node[data-country]").forEach(node => {
+    node.addEventListener("click", async () => {
+      if (!liveCountries.has(node.dataset.country)) return;
+      state.country = state.country === node.dataset.country
+        ? ""
+        : node.dataset.country;
+      state.status = "";
+      state.offset = 0;
+      document.querySelectorAll(".isthmus-node").forEach(countryNode => {
+        countryNode.classList.toggle(
+          "selected",
+          countryNode.dataset.country === state.country,
+        );
+      });
+      await loadStatusAvailability();
+      await loadRecords();
+    });
+  });
+}
+
+async function loadStatusAvailability() {
+  const statusFilter = document.getElementById("status-filter");
+  statusFilter.innerHTML = '<option value="">Todos los estados</option>';
+  const available = await Promise.all(
+    Object.keys(STATUS_LABELS).map(async status => {
+      const params = new URLSearchParams({ status, limit: "1" });
+      if (state.country) params.set("country", state.country);
+      try {
+        const response = await fetch(`${API_BASE_URL}/procurements?${params}`);
+        const payload = response.ok ? await response.json() : null;
+        return payload?.pagination?.total ? status : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  available.filter(Boolean).forEach(value => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = STATUS_LABELS[value] || value;
+    statusFilter.appendChild(option);
+  });
+  statusFilter.value = state.status;
 }
 
 async function main() {
-  if (SUPABASE_ANON_KEY === "PEGA_AQUI_TU_ANON_KEY") {
-    document.getElementById("records-container").innerHTML = `
-      <div class="state-block">
-        <h3>Falta configurar la conexión</h3>
-        <p>Abre este archivo y reemplaza <code class="inline">SUPABASE_ANON_KEY</code> con la llave pública de tu proyecto (Project Settings → API → anon / publishable key).</p>
-      </div>`;
-    return;
-  }
 
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    db: { schema: "mart" },
+  document.getElementById("search").addEventListener("input", updatePage);
+  document.getElementById("status-filter").addEventListener("change", event => {
+    state.status = event.target.value;
+    state.offset = 0;
+    loadRecords();
+  });
+  document.getElementById("page-size").addEventListener("change", event => {
+    state.limit = Number(event.target.value);
+    state.offset = 0;
+    loadRecords();
   });
 
-  const { data, error } = await supabase
-    .from("procurement_record_core")
-    .select(`
-      process_id, country_code,
-      mart_process_details:procurement_process_details(process_number, procurement_method, process_status, source_status, publication_date, closing_date, title),
-      mart_buyer_details:procurement_buyer_details(buyer_name),
-      mart_item_details:procurement_item_details(category_source)
-    `)
-    .eq("country_code", "NI")
-    .order("extracted_at", { ascending: false })
-    .limit(200);
-
-  if (error) {
-    document.getElementById("records-container").innerHTML = `
-      <div class="state-block">
-        <h3>No se pudo conectar a la base de datos</h3>
-        <p>${escapeHtml(error.message)}</p>
-        <p>Revisa que el esquema <code class="inline">mart</code> esté en "Exposed schemas" (Project Settings → API) y que corriste <code class="inline">sql/003_public_read_access.sql</code>.</p>
-      </div>`;
-    return;
-  }
-
-  const allRecords = data || [];
-  document.getElementById("stat-total").textContent = allRecords.length;
-  document.getElementById("stat-institutions").textContent =
-    new Set(allRecords.map(r => r.mart_buyer_details?.buyer_name).filter(Boolean)).size;
-  document.getElementById("footer-updated").textContent =
-    `${allRecords.length} procesos en pantalla · actualizado ${new Date().toLocaleString("es-GT")}`;
-
-  const statusSet = new Set(allRecords.map(r => r.mart_process_details?.process_status).filter(Boolean));
-  const statusFilter = document.getElementById("status-filter");
-  statusSet.forEach(s => {
-    const opt = document.createElement("option");
-    opt.value = s;
-    opt.textContent = STATUS_LABELS[s] || s;
-    statusFilter.appendChild(opt);
-  });
-
-  function applyFilters() {
-    const q = document.getElementById("search").value.trim().toLowerCase();
-    const status = statusFilter.value;
-    const filtered = allRecords.filter(r => {
-      const detail = r.mart_process_details || {};
-      const buyer = r.mart_buyer_details || {};
-      if (status && detail.process_status !== status) return false;
-      if (!q) return true;
-      const haystack = [detail.process_number, detail.title, buyer.buyer_name].join(" ").toLowerCase();
-      return haystack.includes(q);
-    });
-    renderRecords(filtered);
-  }
-
-  document.getElementById("search").addEventListener("input", applyFilters);
-  statusFilter.addEventListener("change", applyFilters);
-
-  applyFilters();
+  await Promise.all([loadCountryAvailability(), loadStatusAvailability()]);
+  await loadRecords();
 }
 
 main();
