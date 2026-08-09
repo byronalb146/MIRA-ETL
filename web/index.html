@@ -297,6 +297,12 @@
     align-items: center;
   }
   .record-meta .dot { opacity: 0.5; }
+  .record-description {
+    margin: 8px 0 0;
+    font-size: 0.86rem;
+    line-height: 1.45;
+    color: var(--ink-soft);
+  }
   .record-category {
     display: inline-block;
     margin-top: 10px;
@@ -534,10 +540,10 @@ function renderRecords(records, showCountryTag) {
   }
 
   container.innerHTML = records.map(r => {
-    const detail = r.mart_process_details || {};
-    const buyer = r.mart_buyer_details || {};
-    const supplier = r.mart_supplier_details || {};
-    const item = r.mart_item_details || {};
+    const detail = r.process_details || {};
+    const buyer = r.buyer_details || {};
+    const supplier = r.supplier_details || {};
+    const item = r.item_details || {};
     const statusLabel = STATUS_LABELS[detail.process_status] || detail.source_status || "Sin estado";
     const pub = formatDate(detail.publication_date);
     const close = formatDate(detail.closing_date);
@@ -550,13 +556,17 @@ function renderRecords(records, showCountryTag) {
             ${showCountryTag ? `<span class="record-country-tag">${escapeHtml(r.country_code)}</span>` : ""}
             ${escapeHtml(detail.procurement_method || "Tipo no especificado")} · ${escapeHtml(detail.process_number || "s/n")}
           </div>
-          <h3 class="record-title">${escapeHtml(buyer.buyer_name || "Institución no especificada")}</h3>
+          <h3 class="record-title">${escapeHtml(detail.title || detail.description || "Proceso sin título")}</h3>
           <div class="record-meta">
+            ${buyer.buyer_name ? `<span>${escapeHtml(buyer.buyer_name)}</span>` : ""}
+            ${buyer.buyer_name && (pub || close) ? `<span class="dot">·</span>` : ""}
             ${pub ? `<span>Publicado ${pub}</span>` : ""}
             ${pub && close ? `<span class="dot">·</span>` : ""}
             ${close ? `<span>Cierra ${close}</span>` : ""}
           </div>
+          ${detail.description && detail.description !== detail.title ? `<p class="record-description">${escapeHtml(detail.description)}</p>` : ""}
           ${item.category_source ? `<span class="record-category">${escapeHtml(item.category_source.split(";")[0])}</span>` : ""}
+          ${item.item_description && item.item_description !== detail.description ? `<p class="record-description">${escapeHtml(item.item_description)}</p>` : ""}
           ${supplier.supplier_name ? `
             <div class="record-award">
               <span>Adjudicado a ${escapeHtml(supplier.supplier_name)}</span>
@@ -602,7 +612,7 @@ async function main() {
       <div class="state-block">
         <h3>No se pudo conectar a la base de datos</h3>
         <p>${escapeHtml(countryError.message)}</p>
-        <p>Revisa que el esquema <code class="inline">mart</code> esté en "Exposed schemas" (Project Settings → API) y que corriste <code class="inline">sql/003_public_read_access.sql</code>.</p>
+        <p>Revisa que el esquema <code class="inline">mart</code> esté en "Exposed schemas" (Project Settings → API) y que corriste <code class="inline">sql/002_public_read_access.sql</code>.</p>
       </div>`;
     return;
   }
@@ -619,10 +629,10 @@ async function main() {
   // un único límite combinado.
   const selectColumns = `
     process_id, country_code,
-    mart_process_details:procurement_process_details(process_number, procurement_method, process_status, source_status, publication_date, closing_date, title, awarded_amount, currency_code),
-    mart_buyer_details:procurement_buyer_details(buyer_name),
-    mart_supplier_details:procurement_supplier_details(supplier_name),
-    mart_item_details:procurement_item_details(category_source)
+    process_details:procurement_process_details(process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, award_date, estimated_amount, awarded_amount, currency_code),
+    buyer_details:procurement_buyer_details(buyer_name, buyer_id_source, buyer_tax_id),
+    supplier_details:procurement_supplier_details(supplier_name, supplier_id_source, supplier_tax_id, supplier_type),
+    item_details:procurement_item_details(item_description, category_source, category_normalised)
   `;
 
   const perCountryResults = await Promise.all(
@@ -650,7 +660,7 @@ async function main() {
 
   document.getElementById("stat-countries").innerHTML = `${liveCountries.size}<span style="font-size:1.4rem;">/6</span>`;
 
-  const statusSet = new Set(allRecords.map(r => r.mart_process_details?.process_status).filter(Boolean));
+  const statusSet = new Set(allRecords.map(r => r.process_details?.process_status).filter(Boolean));
   const statusFilter = document.getElementById("status-filter");
   statusSet.forEach(s => {
     const opt = document.createElement("option");
@@ -671,18 +681,28 @@ async function main() {
     const q = document.getElementById("search").value.trim().toLowerCase();
     const status = statusFilter.value;
     const filtered = allRecords.filter(r => {
-      const detail = r.mart_process_details || {};
-      const buyer = r.mart_buyer_details || {};
+      const detail = r.process_details || {};
+      const buyer = r.buyer_details || {};
+      const supplier = r.supplier_details || {};
+      const item = r.item_details || {};
       if (selectedCountry && r.country_code !== selectedCountry) return false;
       if (status && detail.process_status !== status) return false;
       if (!q) return true;
-      const haystack = [detail.process_number, detail.title, buyer.buyer_name].join(" ").toLowerCase();
+      const haystack = [
+        detail.process_number,
+        detail.title,
+        detail.description,
+        buyer.buyer_name,
+        supplier.supplier_name,
+        item.item_description,
+        item.category_source,
+      ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(q);
     });
 
     document.getElementById("stat-total").textContent = filtered.length;
     document.getElementById("stat-institutions").textContent =
-      new Set(filtered.map(r => r.mart_buyer_details?.buyer_name).filter(Boolean)).size;
+      new Set(filtered.map(r => r.buyer_details?.buyer_name).filter(Boolean)).size;
 
     const note = document.getElementById("country-filter-note");
     const noteParts = [];
