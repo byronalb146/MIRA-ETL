@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -16,40 +15,6 @@ from mira_etl.transform_cr import build_records as build_records_cr
 from mira_etl.transform_gt import build_record as build_record_gt
 from mira_etl.transform_ni import build_records as build_records_ni
 from mira_etl.validation import validate_records
-
-
-def run_all_pipelines(
-    *,
-    period: str,
-    config_dir: Path,
-    work_dir: Path,
-    limit: int | None = None,
-) -> None:
-    """Discover every source JSON and run its connector concurrently."""
-    validate_limit(limit)
-    configs = SourceConfig.discover(config_dir)
-    failures: list[str] = []
-    with ThreadPoolExecutor(max_workers=len(configs)) as executor:
-        futures = {
-            executor.submit(
-                run_pipeline,
-                source=config.source,
-                period=period,
-                config_dir=config_dir,
-                work_dir=work_dir,
-                local_zip=None,
-                limit=limit,
-            ): config.source
-            for config in configs
-        }
-        for future in as_completed(futures):
-            source = futures[future]
-            try:
-                future.result()
-            except BaseException as exc:
-                failures.append(f"{source}: {exc}")
-    if failures:
-        raise RuntimeError("One or more connectors failed: " + "; ".join(failures))
 
 
 def run_pipeline(

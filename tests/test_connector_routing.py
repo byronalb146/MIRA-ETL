@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from unittest.mock import patch
 
 from mira_etl.config import SourceConfig
-from mira_etl.pipeline import run_all_pipelines, transform_source
+from mira_etl.pipeline import transform_source
 
 
 CONFIG_DIR = Path(__file__).parents[1] / "config" / "sources"
@@ -78,28 +76,6 @@ class ConnectorRoutingTest(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["country_code"], "NI")
         self.assertTrue(records[0]["process_id"].startswith("MIRA-NI-"))
-
-    def test_run_all_discovers_and_launches_every_source(self) -> None:
-        calls: list[str] = []
-
-        def fake_run_pipeline(**kwargs: object) -> None:
-            calls.append(str(kwargs["source"]))
-
-        with TemporaryDirectory() as work_dir, patch(
-            "mira_etl.pipeline.run_pipeline", side_effect=fake_run_pipeline
-        ):
-            run_all_pipelines(
-                period="202608",
-                config_dir=CONFIG_DIR,
-                work_dir=Path(work_dir),
-                limit=2,
-            )
-
-        self.assertCountEqual(
-            calls,
-            ["costa_rica_sicop", "guatemala_guatecompras", "nicaragua_siscae"],
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

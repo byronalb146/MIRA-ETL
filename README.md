@@ -39,15 +39,6 @@ $env:SUPABASE_DB_URL="postgresql://..."
 .venv\Scripts\mira-etl run --source costa_rica_sicop --period 202001
 ```
 
-Ejecutar los tres conectores simultaneamente. El comando descubre los archivos
-`config/sources/*.json` y cada uno selecciona su extractor mediante
-`download.type`:
-
-```powershell
-$env:SUPABASE_DB_URL="postgresql://..."
-.venv\Scripts\mira-etl run --source all --period 202607
-```
-
 Ejecutar el conector de Nicaragua (no usa `--local-zip`; `--period` es solo una
 etiqueta de la corrida, SISCAE siempre trae el estado actual):
 
@@ -70,6 +61,11 @@ del lote y un límite opcional se configuran en
 Usa un número en `record_limit` para una prueba acotada y `null` para procesar
 el archivo completo. En cualquier conector, `--limit N` sobrescribe el límite
 de configuración durante pruebas puntuales.
+
+Cada país se ejecuta individualmente. Guatemala y Costa Rica usan `--period`
+para seleccionar la descarga histórica. Nicaragua es un flujo separado: SISCAE
+solo expone el estado vigente al momento de ejecutar, por lo que allí `--period`
+se guarda únicamente como etiqueta de auditoría y no solicita datos históricos.
 
 Crear esquemas/tablas:
 
