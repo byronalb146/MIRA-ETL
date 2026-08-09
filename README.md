@@ -93,32 +93,61 @@ n8n / manual
 ## API
 
 La API es de solo lectura y consulta exclusivamente el modelo normalizado de
-`mart`. Requiere la misma variable de conexión que el ETL:
+`mart`.
+
+### Levantar la API localmente
+
+1. Crea y activa el entorno virtual e instala el proyecto:
 
 ```bash
-export SUPABASE_DB_URL="postgresql://..."
-```
-
-Instala las dependencias:
-
-```bash
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install -e .
 ```
 
-En una base existente, aplica únicamente `sql/004_procurements_web_view.sql`
-desde el SQL Editor de Supabase o con `psql`; no es necesario recrear tablas:
+En PowerShell:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -e .
+```
+
+2. Configura la misma conexión de Supabase que utiliza el ETL. Puedes colocarla
+en un archivo `.env` en la raíz del proyecto:
+
+```dotenv
+SUPABASE_DB_URL=postgresql://usuario:password@host:5432/postgres
+```
+
+También puedes exportarla directamente en macOS/Linux:
+
+```bash
+export SUPABASE_DB_URL="postgresql://usuario:password@host:5432/postgres"
+```
+
+3. La primera vez, aplica únicamente `sql/004_procurements_web_view.sql` desde
+el SQL Editor de Supabase o con `psql`. No es necesario recrear las tablas:
 
 ```bash
 psql "$SUPABASE_DB_URL" -f sql/004_procurements_web_view.sql
 ```
 
-Levanta el servidor local:
+4. Levanta FastAPI con Uvicorn desde la raíz del repositorio:
 
 ```bash
-uvicorn mira_etl.api.main:app --reload
+python -m uvicorn mira_etl.api.main:app --reload
 ```
 
-La página de `web/index.html` se sirve desde la misma aplicación. Ábrela en:
+Deberías ver un mensaje similar a:
+
+```text
+Uvicorn running on http://127.0.0.1:8000
+```
+
+### URLs disponibles
+
+La página de `web/index.html` se sirve desde la misma aplicación:
 
 ```text
 http://localhost:8000/
@@ -144,6 +173,12 @@ Consulta Guatemala con paginación:
 
 ```bash
 curl "http://localhost:8000/api/v1/procurements?country=GT&limit=20&offset=0"
+```
+
+Consulta únicamente procesos adjudicados de Guatemala:
+
+```bash
+curl "http://localhost:8000/api/v1/procurements?country=GT&status=AWARDED&limit=10&offset=0"
 ```
 
 La documentación interactiva queda disponible en
