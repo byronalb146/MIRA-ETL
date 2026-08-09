@@ -88,6 +88,14 @@
     align-items: center;
     padding: 0 10px;
   }
+  button.isthmus-node {
+    background: none;
+    border: none;
+    font: inherit;
+    cursor: default;
+    padding: 4px 10px;
+  }
+  button.isthmus-node.clickable { cursor: pointer; }
   .isthmus-node:not(:last-child)::after {
     content: "";
     position: absolute;
@@ -104,14 +112,19 @@
     background: var(--paper-raised);
     border: 1.5px solid var(--line);
     margin-bottom: 5px;
-    transition: transform 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
   }
   .isthmus-node.live .isthmus-dot {
     background: var(--quetzal);
     border-color: var(--quetzal);
     box-shadow: 0 0 0 3px var(--quetzal-soft);
   }
-  .isthmus-node:hover .isthmus-dot { transform: scale(1.25); }
+  .isthmus-node.selected .isthmus-dot {
+    background: var(--ember);
+    border-color: var(--ember);
+    box-shadow: 0 0 0 3px var(--ember-soft);
+  }
+  .isthmus-node.clickable:hover .isthmus-dot { transform: scale(1.25); }
   .isthmus-code {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.62rem;
@@ -119,6 +132,7 @@
     color: var(--ink-soft);
   }
   .isthmus-node.live .isthmus-code { color: var(--isthmus); font-weight: 500; }
+  .isthmus-node.selected .isthmus-code { color: var(--ember); font-weight: 600; }
   .isthmus-tooltip {
     position: absolute;
     top: 26px;
@@ -254,6 +268,18 @@
     text-transform: uppercase;
     color: var(--ember);
     margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .record-country-tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.64rem;
+    letter-spacing: 0.03em;
+    color: var(--paper-raised);
+    background: var(--isthmus);
+    padding: 1px 6px;
+    border-radius: 4px;
   }
   .record-title {
     font-family: 'Fraunces', serif;
@@ -279,6 +305,19 @@
     background: rgba(14, 63, 92, 0.06);
     padding: 3px 9px;
     border-radius: 5px;
+  }
+  .record-award {
+    margin-top: 10px;
+    font-size: 0.86rem;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .record-award .amount {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    color: var(--quetzal);
   }
   .status-badge {
     font-family: 'IBM Plex Mono', monospace;
@@ -375,14 +414,14 @@
   <div class="hero-stats">
     <div>
       <div class="stat-number" id="stat-total">—</div>
-      <div class="stat-label">Procesos cargados actualmente (Nicaragua, procesos vigentes)</div>
+      <div class="stat-label">Procesos cargados actualmente</div>
     </div>
     <div>
       <div class="stat-number" id="stat-institutions">—</div>
       <div class="stat-label">Instituciones compradoras distintas</div>
     </div>
     <div>
-      <div class="stat-number">1<span style="font-size:1.4rem;">/6</span></div>
+      <div class="stat-number" id="stat-countries">—<span style="font-size:1.4rem;">/6</span></div>
       <div class="stat-label">Países con datos en vivo — el resto, próximamente</div>
     </div>
   </div>
@@ -394,6 +433,7 @@
     <option value="">Todos los estados</option>
   </select>
 </div>
+<p id="country-filter-note" style="max-width:1100px;margin:0 auto;padding:0 24px 16px;font-size:0.82rem;color:var(--ink-soft);display:none;"></p>
 
 <main class="records" id="records-container">
   <div class="state-block" id="state-loading">
@@ -419,13 +459,13 @@
 const SUPABASE_URL = "https://xbjcfccxencwkdybyxkz.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhiamNmY2N4ZW5jd2tkeWJ5eGt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4NDcyMzgsImV4cCI6MjEwMTQyMzIzOH0.wMGOnY3w-LQx0qZb0HOHK9P67xi64hG4WWBX7mYZ308";
 
-const COUNTRIES = [
-  { code: "GT", name: "Guatemala", live: false },
-  { code: "HN", name: "Honduras", live: false },
-  { code: "SV", name: "El Salvador", live: false },
-  { code: "NI", name: "Nicaragua", live: true },
-  { code: "CR", name: "Costa Rica", live: false },
-  { code: "PA", name: "Panamá", live: false },
+const COUNTRY_ORDER = [
+  { code: "GT", name: "Guatemala" },
+  { code: "HN", name: "Honduras" },
+  { code: "SV", name: "El Salvador" },
+  { code: "NI", name: "Nicaragua" },
+  { code: "CR", name: "Costa Rica" },
+  { code: "PA", name: "Panamá" },
 ];
 
 const STATUS_LABELS = {
@@ -442,16 +482,26 @@ const STATUS_TONES = {
   CANCELLED: "warning", DESERTED: "warning", SUSPENDED: "warning",
 };
 
-function renderIsthmusStrip(el) {
-  el.innerHTML = COUNTRIES.map(c => `
-    <div class="isthmus-node ${c.live ? 'live' : ''}">
+let selectedCountry = null; // null = todos los países con datos
+
+function renderIsthmusStrip(el, liveCodes, onSelect) {
+  el.innerHTML = "";
+  COUNTRY_ORDER.forEach(c => {
+    const isLive = liveCodes.has(c.code);
+    const isSelected = selectedCountry === c.code;
+    const node = document.createElement(isLive ? "button" : "div");
+    node.className = `isthmus-node ${isLive ? "live clickable" : ""} ${isSelected ? "selected" : ""}`;
+    node.type = isLive ? "button" : undefined;
+    node.setAttribute("aria-label", `${c.name}${isLive ? "" : " (próximamente)"}`);
+    node.innerHTML = `
       <span class="isthmus-dot"></span>
       <span class="isthmus-code">${c.code}</span>
-      <span class="isthmus-tooltip">${c.name}${c.live ? ' · en vivo' : ' · próximamente'}</span>
-    </div>
-  `).join("");
+      <span class="isthmus-tooltip">${c.name}${isLive ? (isSelected ? " · viendo esto" : " · clic para filtrar") : " · próximamente"}</span>
+    `;
+    if (isLive) node.addEventListener("click", () => onSelect(isSelected ? null : c.code));
+    el.appendChild(node);
+  });
 }
-renderIsthmusStrip(document.getElementById("isthmus-strip-header"));
 
 function formatDate(value) {
   if (!value) return null;
@@ -459,18 +509,26 @@ function formatDate(value) {
   return d.toLocaleDateString("es-GT", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function formatAmount(amount, currency) {
+  if (amount === null || amount === undefined) return null;
+  const num = Number(amount);
+  if (Number.isNaN(num)) return null;
+  const formatted = num.toLocaleString("es-GT", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return currency ? `${currency} ${formatted}` : formatted;
+}
+
 function escapeHtml(s) {
   return (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function renderRecords(records) {
+function renderRecords(records, showCountryTag) {
   const container = document.getElementById("records-container");
 
   if (records.length === 0) {
     container.innerHTML = `
       <div class="state-block">
         <h3>No hay procesos que coincidan</h3>
-        <p>Ajusta la búsqueda o el filtro de estado. Si esperabas ver datos aquí, confirma que el conector ya cargó registros para este país.</p>
+        <p>Ajusta la búsqueda, el país o el filtro de estado. Si esperabas ver datos aquí, confirma que el conector ya cargó registros para este país.</p>
       </div>`;
     return;
   }
@@ -478,15 +536,20 @@ function renderRecords(records) {
   container.innerHTML = records.map(r => {
     const detail = r.mart_process_details || {};
     const buyer = r.mart_buyer_details || {};
+    const supplier = r.mart_supplier_details || {};
     const item = r.mart_item_details || {};
     const statusLabel = STATUS_LABELS[detail.process_status] || detail.source_status || "Sin estado";
     const pub = formatDate(detail.publication_date);
     const close = formatDate(detail.closing_date);
+    const awardedAmount = formatAmount(detail.awarded_amount, detail.currency_code);
 
     return `
       <article class="record-card">
         <div>
-          <div class="record-method">${escapeHtml(detail.procurement_method || "Tipo no especificado")} · ${escapeHtml(detail.process_number || "s/n")}</div>
+          <div class="record-method">
+            ${showCountryTag ? `<span class="record-country-tag">${escapeHtml(r.country_code)}</span>` : ""}
+            ${escapeHtml(detail.procurement_method || "Tipo no especificado")} · ${escapeHtml(detail.process_number || "s/n")}
+          </div>
           <h3 class="record-title">${escapeHtml(buyer.buyer_name || "Institución no especificada")}</h3>
           <div class="record-meta">
             ${pub ? `<span>Publicado ${pub}</span>` : ""}
@@ -494,11 +557,20 @@ function renderRecords(records) {
             ${close ? `<span>Cierra ${close}</span>` : ""}
           </div>
           ${item.category_source ? `<span class="record-category">${escapeHtml(item.category_source.split(";")[0])}</span>` : ""}
+          ${supplier.supplier_name ? `
+            <div class="record-award">
+              <span>Adjudicado a ${escapeHtml(supplier.supplier_name)}</span>
+              ${awardedAmount ? `<span class="amount">· ${escapeHtml(awardedAmount)}</span>` : ""}
+            </div>` : ""}
         </div>
         <span class="status-badge" data-tone="${STATUS_TONES[detail.process_status] || 'closed'}">${escapeHtml(statusLabel)}</span>
       </article>`;
   }).join("");
 }
+
+// Estado inicial del strip: todo en "próximamente" hasta que sepamos qué
+// países tienen datos reales (se vuelve a pintar dentro de main()).
+renderIsthmusStrip(document.getElementById("isthmus-strip-header"), new Set(), () => {});
 
 async function main() {
   if (SUPABASE_ANON_KEY === "PEGA_AQUI_TU_ANON_KEY") {
@@ -514,34 +586,69 @@ async function main() {
     db: { schema: "mart" },
   });
 
-  const { data, error } = await supabase
-    .from("procurement_record_core")
-    .select(`
-      process_id, country_code,
-      mart_process_details:procurement_process_details(process_number, procurement_method, process_status, source_status, publication_date, closing_date, title),
-      mart_buyer_details:procurement_buyer_details(buyer_name),
-      mart_item_details:procurement_item_details(category_source)
-    `)
-    .eq("country_code", "NI")
-    .order("extracted_at", { ascending: false })
-    .limit(200);
+  const RECORDS_PER_COUNTRY = 250;
 
-  if (error) {
+  // Paso 1: qué países tienen datos, sin que el límite de una sola consulta
+  // deje a unos fuera por el volumen de otros (ej. Guatemala con muchos más
+  // registros que Nicaragua/Costa Rica). Esta consulta es liviana (una sola
+  // columna, sin joins), así que puede traer bastantes filas sin problema.
+  const { data: countryRows, error: countryError } = await supabase
+    .from("procurement_record_core")
+    .select("country_code")
+    .limit(20000);
+
+  if (countryError) {
     document.getElementById("records-container").innerHTML = `
       <div class="state-block">
         <h3>No se pudo conectar a la base de datos</h3>
-        <p>${escapeHtml(error.message)}</p>
-        <p>Revisa que el esquema <code class="inline">mart</code> esté en "Exposed schemas" (Project Settings → API) y que corriste <code class="inline">sql/002_public_read_access.sql</code>.</p>
+        <p>${escapeHtml(countryError.message)}</p>
+        <p>Revisa que el esquema <code class="inline">mart</code> esté en "Exposed schemas" (Project Settings → API) y que corriste <code class="inline">sql/003_public_read_access.sql</code>.</p>
       </div>`;
     return;
   }
 
-  const allRecords = data || [];
-  document.getElementById("stat-total").textContent = allRecords.length;
-  document.getElementById("stat-institutions").textContent =
-    new Set(allRecords.map(r => r.mart_buyer_details?.buyer_name).filter(Boolean)).size;
-  document.getElementById("footer-updated").textContent =
-    `${allRecords.length} procesos en pantalla · actualizado ${new Date().toLocaleString("es-GT")}`;
+  const liveCountries = new Set((countryRows || []).map(r => r.country_code).filter(Boolean));
+  const countryTotals = {};
+  (countryRows || []).forEach(r => {
+    if (!r.country_code) return;
+    countryTotals[r.country_code] = (countryTotals[r.country_code] || 0) + 1;
+  });
+
+  // Paso 2: una consulta POR PAÍS con su propio límite, para que cada uno
+  // tenga garantizado su propio espacio en la lista en vez de competir por
+  // un único límite combinado.
+  const selectColumns = `
+    process_id, country_code,
+    mart_process_details:procurement_process_details(process_number, procurement_method, process_status, source_status, publication_date, closing_date, title, awarded_amount, currency_code),
+    mart_buyer_details:procurement_buyer_details(buyer_name),
+    mart_supplier_details:procurement_supplier_details(supplier_name),
+    mart_item_details:procurement_item_details(category_source)
+  `;
+
+  const perCountryResults = await Promise.all(
+    [...liveCountries].map(code =>
+      supabase
+        .from("procurement_record_core")
+        .select(selectColumns)
+        .eq("country_code", code)
+        .order("extracted_at", { ascending: false })
+        .limit(RECORDS_PER_COUNTRY)
+    )
+  );
+
+  const fetchErrors = perCountryResults.map(r => r.error).filter(Boolean);
+  if (fetchErrors.length > 0) {
+    document.getElementById("records-container").innerHTML = `
+      <div class="state-block">
+        <h3>No se pudo conectar a la base de datos</h3>
+        <p>${escapeHtml(fetchErrors[0].message)}</p>
+      </div>`;
+    return;
+  }
+
+  const allRecords = perCountryResults.flatMap(r => r.data || []);
+
+  document.getElementById("stat-countries").innerHTML = `${liveCountries.size}<span style="font-size:1.4rem;">/6</span>`;
 
   const statusSet = new Set(allRecords.map(r => r.mart_process_details?.process_status).filter(Boolean));
   const statusFilter = document.getElementById("status-filter");
@@ -552,20 +659,67 @@ async function main() {
     statusFilter.appendChild(opt);
   });
 
+  function repaintIsthmus() {
+    renderIsthmusStrip(document.getElementById("isthmus-strip-header"), liveCountries, (code) => {
+      selectedCountry = code;
+      repaintIsthmus();
+      applyFilters();
+    });
+  }
+
   function applyFilters() {
     const q = document.getElementById("search").value.trim().toLowerCase();
     const status = statusFilter.value;
     const filtered = allRecords.filter(r => {
       const detail = r.mart_process_details || {};
       const buyer = r.mart_buyer_details || {};
+      if (selectedCountry && r.country_code !== selectedCountry) return false;
       if (status && detail.process_status !== status) return false;
       if (!q) return true;
       const haystack = [detail.process_number, detail.title, buyer.buyer_name].join(" ").toLowerCase();
       return haystack.includes(q);
     });
-    renderRecords(filtered);
+
+    document.getElementById("stat-total").textContent = filtered.length;
+    document.getElementById("stat-institutions").textContent =
+      new Set(filtered.map(r => r.mart_buyer_details?.buyer_name).filter(Boolean)).size;
+
+    const note = document.getElementById("country-filter-note");
+    const noteParts = [];
+    if (selectedCountry) {
+      const name = COUNTRY_ORDER.find(c => c.code === selectedCountry)?.name || selectedCountry;
+      noteParts.push(`Mostrando solo <strong>${escapeHtml(name)}</strong> · <a href="#" id="clear-country" style="color:var(--isthmus-light);text-decoration:underline;">ver todos los países</a>`);
+    }
+    const truncated = Object.entries(countryTotals).filter(([code, total]) =>
+      total > RECORDS_PER_COUNTRY && (!selectedCountry || selectedCountry === code)
+    );
+    if (truncated.length > 0) {
+      const names = truncated.map(([code, total]) => `${code} (${total} en total, mostrando ${RECORDS_PER_COUNTRY})`).join(", ");
+      noteParts.push(`Mostrando una muestra de los más recientes: ${names}.`);
+    }
+    if (noteParts.length > 0) {
+      note.style.display = "block";
+      note.innerHTML = noteParts.join(" · ");
+      const clearLink = document.getElementById("clear-country");
+      if (clearLink) {
+        clearLink.addEventListener("click", (e) => {
+          e.preventDefault();
+          selectedCountry = null;
+          repaintIsthmus();
+          applyFilters();
+        });
+      }
+    } else {
+      note.style.display = "none";
+    }
+
+    document.getElementById("footer-updated").textContent =
+      `${filtered.length} procesos en pantalla · actualizado ${new Date().toLocaleString("es-GT")}`;
+
+    renderRecords(filtered, !selectedCountry && liveCountries.size > 1);
   }
 
+  repaintIsthmus();
   document.getElementById("search").addEventListener("input", applyFilters);
   statusFilter.addEventListener("change", applyFilters);
 
