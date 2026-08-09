@@ -4,7 +4,7 @@
   "source_system": "SICOP Costa Rica",
   "connector_version": "cr-sicop-0.1.0",
   "download": {
-    "type": "http_zip",
+    "type": "http_zip_csv",
     "url_template": "https://dlsaobservatorioprod.blob.core.windows.net/fs-synapse-observatorio-produccion/Zip/{period}.zip"
   },
   "files": {

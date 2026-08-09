@@ -20,9 +20,24 @@ class SourceConfig:
     @classmethod
     def load(cls, config_dir: Path, source: str) -> "SourceConfig":
         path = config_dir / f"{source}.json"
+        if not path.is_file():
+            raise FileNotFoundError(f"Source configuration not found: {path}")
         with path.open("r", encoding="utf-8") as fh:
             payload = json.load(fh)
-        return cls(**payload)
+        config = cls(**payload)
+        if config.source != source:
+            raise ValueError(
+                f"Configuration {path} declares source '{config.source}', "
+                f"expected '{source}'"
+            )
+        return config
+
+    @classmethod
+    def discover(cls, config_dir: Path) -> list["SourceConfig"]:
+        configs = [cls.load(config_dir, path.stem) for path in sorted(config_dir.glob("*.json"))]
+        if not configs:
+            raise FileNotFoundError(f"No source configurations found in {config_dir}")
+        return configs
 
     def delimiter_for(self, filename: str) -> str:
         delimiters = self.csv.get("delimiters", {})

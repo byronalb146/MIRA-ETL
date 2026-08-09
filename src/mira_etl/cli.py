@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from mira_etl.db import Database
-from mira_etl.pipeline import run_pipeline
+from mira_etl.pipeline import run_all_pipelines, run_pipeline
 
 
 def main() -> None:
@@ -12,7 +12,11 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run = subparsers.add_parser("run", help="Run an ETL source for a period.")
-    run.add_argument("--source", required=True)
+    run.add_argument(
+        "--source",
+        required=True,
+        help="Source configuration name, or 'all' to run every JSON concurrently.",
+    )
     run.add_argument("--period", required=True, help="Period in AAAAMM format.")
     run.add_argument("--local-zip", type=Path, default=None)
     run.add_argument("--work-dir", type=Path, default=Path("data/work"))
@@ -35,6 +39,16 @@ def main() -> None:
         return
 
     if args.command == "run":
+        if args.source == "all":
+            if args.local_zip is not None:
+                parser.error("--local-zip cannot be used with --source all")
+            run_all_pipelines(
+                period=args.period,
+                config_dir=args.config_dir,
+                work_dir=args.work_dir,
+                limit=args.limit,
+            )
+            return
         run_pipeline(
             source=args.source,
             period=args.period,

@@ -4,7 +4,7 @@
   "source_system": "Guatecompras OCDS",
   "connector_version": "gt-ocds-0.1.0",
   "download": {
-    "type": "http_zip",
+    "type": "http_zip_json",
     "bootstrap_url": "https://ocds.guatecompras.gt/",
     "url_template": "https://ocds.guatecompras.gt/file/json/{year}/{month}"
   },
@@ -19,6 +19,6 @@
   },
   "processing": {
     "batch_size": 250,
-    "record_limit": 2
+    "record_limit": null
   }
 }

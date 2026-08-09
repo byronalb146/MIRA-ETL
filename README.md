@@ -39,12 +39,13 @@ $env:SUPABASE_DB_URL="postgresql://..."
 .venv\Scripts\mira-etl run --source costa_rica_sicop --period 202001
 ```
 
-Ejecutar el conector de Nicaragua (no usa `--local-zip`; `--period` es solo una
-etiqueta de la corrida, SISCAE siempre trae el estado actual):
+Ejecutar los tres conectores simultaneamente. El comando descubre los archivos
+`config/sources/*.json` y cada uno selecciona su extractor mediante
+`download.type`:
 
 ```powershell
 $env:SUPABASE_DB_URL="postgresql://..."
-.venv\Scripts\mira-etl run --source nicaragua_siscae --period 202607
+.venv\Scripts\mira-etl run --source all --period 202607
 ```
 
 Ejecutar el conector de Nicaragua (no usa `--local-zip`; `--period` es solo una
@@ -54,10 +55,6 @@ etiqueta de la corrida, SISCAE siempre trae el estado actual):
 $env:SUPABASE_DB_URL="postgresql://..."
 .venv\Scripts\mira-etl run --source nicaragua_siscae --period 202607
 ```
-
-> **Modo de prueba de Costa Rica:** actualmente ese conector está limitado a 2
-> contratos para evitar cargas grandes en Supabase. El límite temporal está
-> definido por `CONTRACT_LIMIT` en `src/mira_etl/pipeline.py`.
 
 Guatemala se lee incrementalmente con `ijson` y se carga en lotes. El tamaño
 del lote y un límite opcional se configuran en
@@ -66,13 +63,13 @@ del lote y un límite opcional se configuran en
 ```json
 "processing": {
   "batch_size": 250,
-  "record_limit": 2
+  "record_limit": null
 }
 ```
 
-Usa un número en `record_limit` para una prueba acotada; actualmente Guatemala
-también está limitado a 2 registros. `null` procesaría el archivo completo. El
-límite temporal `CONTRACT_LIMIT` continúa aplicándose al flujo de Costa Rica.
+Usa un número en `record_limit` para una prueba acotada y `null` para procesar
+el archivo completo. En cualquier conector, `--limit N` sobrescribe el límite
+de configuración durante pruebas puntuales.
 
 Crear esquemas/tablas:
 
@@ -89,4 +86,3 @@ n8n / manual
   -> Supabase PostgreSQL
      raw -> staging -> mart -> audit
 ```
-
