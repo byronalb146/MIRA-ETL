@@ -186,6 +186,11 @@ class Database:
             cur.execute(sql, params)
             return cur.fetchone()
 
+    def fetch_all(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            return list(cur.fetchall())
+
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None:
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
@@ -692,12 +697,17 @@ class Database:
 
         self.upsert_record_core_batch(record_list)
 
+        buyer_ids = self.resolve_buyer_ids(record_list)
+        supplier_ids = self.resolve_supplier_ids(record_list)
+
         process_rows = []
         buyer_rows = []
         supplier_rows = []
         item_rows = []
 
-        for record in record_list:
+        for record, buyer_id, supplier_id in zip(
+            record_list, buyer_ids, supplier_ids, strict=True
+        ):
             process_id = record["process_id"]
             process_rows.append(
                 (
@@ -717,23 +727,8 @@ class Database:
                 )
             )
 
-            buyer_id = self.get_or_create_buyer(
-                country_code=record["country_code"],
-                source_system=record["source_system"],
-                buyer_tax_id=record.get("buyer_tax_id"),
-                buyer_id_source=record.get("buyer_id_source"),
-                buyer_name=record.get("buyer_name"),
-            )
             buyer_rows.append((process_id, buyer_id))
 
-            supplier_id = self.get_or_create_supplier(
-                country_code=record["country_code"],
-                source_system=record["source_system"],
-                supplier_tax_id=record.get("supplier_tax_id"),
-                supplier_id_source=record.get("supplier_id_source"),
-                supplier_name=record.get("supplier_name"),
-                supplier_type=record.get("supplier_type"),
-            )
             supplier_rows.append((process_id, supplier_id))
             item_rows.append(
                 (
@@ -751,6 +746,101 @@ class Database:
             cur.executemany(ITEM_DETAIL_SQL, item_rows)
 
         return len(record_list)
+
+    def resolve_buyer_ids(self, records: list[dict[str, Any]]) -> list[int | None]:
+        rows = self.fetch_all("select * from mart.buyers")
+        tax, source, name = entity_indexes(rows, "buyer")
+        pending: list[tuple[Any, ...]] = []
+        markers: list[int | None] = []
+
+        for record in records:
+            country = record["country_code"]
+            source_system = record["source_system"]
+            tax_id = record.get("buyer_tax_id")
+            source_id = record.get("buyer_id_source")
+            normalised = normalise_name(record.get("buyer_name"))
+            entity_id = first_entity_id(
+                country, source_system, tax_id, source_id, normalised,
+                tax, source, name,
+            )
+            if entity_id is None and (tax_id or source_id or normalised):
+                entity_id = -(len(pending) + 1)
+                pending.append((country, source_system, tax_id, source_id, normalised))
+                index_entity(
+                    entity_id, country, source_system, tax_id, source_id,
+                    normalised, tax, source, name,
+                )
+            markers.append(entity_id)
+
+        if pending:
+            with self.conn.cursor() as cur:
+                cur.executemany(
+                    """insert into mart.buyers
+                       (country_code, source_system, buyer_tax_id,
+                        buyer_id_source, name_normalised)
+                       values (%s, %s, %s, %s, %s)""",
+                    pending,
+                )
+            rows = self.fetch_all("select * from mart.buyers")
+            tax, source, name = entity_indexes(rows, "buyer")
+            return [
+                first_entity_id(
+                    record["country_code"], record["source_system"],
+                    record.get("buyer_tax_id"), record.get("buyer_id_source"),
+                    normalise_name(record.get("buyer_name")), tax, source, name,
+                )
+                for record in records
+            ]
+        return markers
+
+    def resolve_supplier_ids(self, records: list[dict[str, Any]]) -> list[int | None]:
+        rows = self.fetch_all("select * from mart.suppliers")
+        tax, source, name = entity_indexes(rows, "supplier")
+        pending: list[tuple[Any, ...]] = []
+        markers: list[int | None] = []
+
+        for record in records:
+            country = record["country_code"]
+            source_system = record["source_system"]
+            tax_id = record.get("supplier_tax_id")
+            source_id = record.get("supplier_id_source")
+            normalised = normalise_name(record.get("supplier_name"))
+            entity_id = first_entity_id(
+                country, source_system, tax_id, source_id, normalised,
+                tax, source, name,
+            )
+            if entity_id is None and (tax_id or source_id or normalised):
+                entity_id = -(len(pending) + 1)
+                pending.append(
+                    (country, source_system, tax_id, source_id, normalised,
+                     record.get("supplier_type"))
+                )
+                index_entity(
+                    entity_id, country, source_system, tax_id, source_id,
+                    normalised, tax, source, name,
+                )
+            markers.append(entity_id)
+
+        if pending:
+            with self.conn.cursor() as cur:
+                cur.executemany(
+                    """insert into mart.suppliers
+                       (country_code, source_system, supplier_tax_id,
+                        supplier_id_source, name_normalised, supplier_type)
+                       values (%s, %s, %s, %s, %s, %s)""",
+                    pending,
+                )
+            rows = self.fetch_all("select * from mart.suppliers")
+            tax, source, name = entity_indexes(rows, "supplier")
+            return [
+                first_entity_id(
+                    record["country_code"], record["source_system"],
+                    record.get("supplier_tax_id"), record.get("supplier_id_source"),
+                    normalise_name(record.get("supplier_name")), tax, source, name,
+                )
+                for record in records
+            ]
+        return markers
 
     def upsert_record_core_batch(self, records: list[dict[str, Any]]) -> None:
         rows = [
@@ -788,3 +878,60 @@ def schema_mismatches(actual: dict[str, set[str]]) -> list[str]:
                 f"{table} has unexpected columns {', '.join(unexpected_columns)}"
             )
     return mismatches
+
+
+def entity_indexes(
+    rows: list[dict[str, Any]], prefix: str,
+) -> tuple[dict[tuple[str, str], int], dict[tuple[str, str, str], int], dict[tuple[str, str], int]]:
+    tax: dict[tuple[str, str], int] = {}
+    source: dict[tuple[str, str, str], int] = {}
+    name: dict[tuple[str, str], int] = {}
+    id_column = f"{prefix}_id"
+    tax_column = f"{prefix}_tax_id"
+    source_column = f"{prefix}_id_source"
+    for row in rows:
+        entity_id = int(row[id_column])
+        index_entity(
+            entity_id, row["country_code"], row["source_system"],
+            row.get(tax_column), row.get(source_column), row.get("name_normalised"),
+            tax, source, name,
+        )
+    return tax, source, name
+
+
+def index_entity(
+    entity_id: int,
+    country: str,
+    source_system: str,
+    tax_id: str | None,
+    source_id: str | None,
+    normalised: str | None,
+    tax: dict[tuple[str, str], int],
+    source: dict[tuple[str, str, str], int],
+    name: dict[tuple[str, str], int],
+) -> None:
+    if tax_id:
+        tax[(country, tax_id)] = entity_id
+    if source_id:
+        source[(country, source_system, source_id)] = entity_id
+    if normalised:
+        name[(country, normalised)] = entity_id
+
+
+def first_entity_id(
+    country: str,
+    source_system: str,
+    tax_id: str | None,
+    source_id: str | None,
+    normalised: str | None,
+    tax: dict[tuple[str, str], int],
+    source: dict[tuple[str, str, str], int],
+    name: dict[tuple[str, str], int],
+) -> int | None:
+    if tax_id:
+        return tax.get((country, tax_id))
+    if source_id:
+        return source.get((country, source_system, source_id))
+    if normalised:
+        return name.get((country, normalised))
+    return None

@@ -29,6 +29,10 @@ def obtain_zip(
     )
 
     if local_zip is not None:
+        if local_zip.resolve() == target.resolve():
+            if not zipfile.is_zipfile(target):
+                raise ValueError(f"Local file is not a valid ZIP: {target}")
+            return target
         shutil.copyfile(
             local_zip,
             target,

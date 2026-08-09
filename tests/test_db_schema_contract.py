@@ -4,10 +4,17 @@ import unittest
 import re
 from pathlib import Path
 
-from mira_etl.db import SCHEMA_CONTRACT, schema_mismatches
+from mira_etl.db import SCHEMA_CONTRACT, first_entity_id, schema_mismatches
 
 
 class DatabaseSchemaContractTest(unittest.TestCase):
+    def test_entity_matching_does_not_fall_back_when_tax_id_exists(self) -> None:
+        entity_id = first_entity_id(
+            "CR", "SICOP", "NEW-TAX", None, "SAME NAME",
+            {("CR", "OTHER-TAX"): 1}, {}, {("CR", "SAME NAME"): 1},
+        )
+        self.assertIsNone(entity_id)
+
     def test_sql_declares_every_table_and_column_used_by_db(self) -> None:
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
             encoding="utf-8"
