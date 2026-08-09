@@ -52,9 +52,9 @@ La normalizacion toma cada fila de `ProcedimientoAdjudicacion.csv` como una adju
 | Identificacion | `process_number` | `ProcedimientoAdjudicacion.NUMERO_PROCEDIMIENTO`; fallback `DetalleCarteles.NRO_PROCEDIMIENTO` | Copia directa | `mart.procurement_process_details.process_number` |
 | Identificacion | `title` | `DetalleCarteles.CARTEL_NM`; fallback `ProcedimientoAdjudicacion.DESCR_PROCEDIMIENTO` | Copia directa | `mart.procurement_process_details.title` |
 | Identificacion | `description` | `ProcedimientoAdjudicacion.DESCR_PROCEDIMIENTO`; fallback `DetalleCarteles.CARTEL_NM` | Copia directa | `mart.procurement_process_details.description` |
-| Comprador | `buyer_name` | `ProcedimientoAdjudicacion.INSTITUCION`; fallback `InstitucionesRegistradas.NOMBRE_INSTITUCION` | Copia directa | `mart.procurement_buyer_details.buyer_name` |
-| Comprador | `buyer_id_source` | `ProcedimientoAdjudicacion.CEDULA`; fallback `DetalleCarteles.CEDULA_INSTITUCION` | Copia directa | `mart.procurement_buyer_details.buyer_id_source` |
-| Comprador | `buyer_tax_id` | `ProcedimientoAdjudicacion.CEDULA`; fallback `DetalleCarteles.CEDULA_INSTITUCION` | Se usa la cedula institucional como identificador fiscal disponible | `mart.procurement_buyer_details.buyer_tax_id` |
+| Comprador | `buyer_name` | `ProcedimientoAdjudicacion.INSTITUCION`; fallback `InstitucionesRegistradas.NOMBRE_INSTITUCION` | Nombre normalizado y deduplicado | `mart.buyers.name_normalised` |
+| Comprador | `buyer_id_source` | `ProcedimientoAdjudicacion.CEDULA`; fallback `DetalleCarteles.CEDULA_INSTITUCION` | Copia directa | `mart.buyers.buyer_id_source` |
+| Comprador | `buyer_tax_id` | `ProcedimientoAdjudicacion.CEDULA`; fallback `DetalleCarteles.CEDULA_INSTITUCION` | Se usa la cedula institucional como identificador fiscal disponible | `mart.buyers.buyer_tax_id` |
 | Contratacion | `procurement_method` | `ProcedimientoAdjudicacion.TIPO_PROCEDIMIENTO`; fallback `DetalleCarteles.TIPO_PROCEDIMIENTO` | Copia del valor fuente | `mart.procurement_process_details.procurement_method` |
 | Contratacion | `process_status` | `DetalleCarteles.CARTEL_STAT` + existencia en `ProcedimientoAdjudicacion.csv` | Normaliza a catalogo MIRA: `DESERTED`, `CANCELLED`, `SUSPENDED`; si hay adjudicacion, `AWARDED` | `mart.procurement_process_details.process_status` |
 | Contratacion | `source_status` | `DetalleCarteles.CARTEL_STAT` | Valor original de la fuente | `mart.procurement_process_details.source_status` |
@@ -64,10 +64,10 @@ La normalizacion toma cada fila de `ProcedimientoAdjudicacion.csv` como una adju
 | Montos | `estimated_amount` | `DetalleCarteles.MONTO_EST` | Parseo a `numeric`; si no cruza por `NRO_SICOP`, queda `NULL` | `mart.procurement_process_details.estimated_amount` |
 | Montos | `awarded_amount` | `ProcedimientoAdjudicacion.MONTO_ADJU_LINEA_CRC`; fallback `ProcedimientoAdjudicacion.MONTO_ADJU_LINEA` | Parseo a `numeric` | `mart.procurement_process_details.awarded_amount` |
 | Montos | `currency_code` | `ProcedimientoAdjudicacion.MONEDA_ADJUDICADA` | Copia directa del codigo fuente | `mart.procurement_process_details.currency_code` |
-| Proveedor | `supplier_name` | `ProcedimientoAdjudicacion.NOMBRE_PROVEEDOR`; fallback `Proveedores.NOMBRE_PROVEEDOR` | Copia directa | `mart.procurement_supplier_details.supplier_name` |
-| Proveedor | `supplier_id_source` | `ProcedimientoAdjudicacion.CEDULA_PROVEEDOR` | Copia directa | `mart.procurement_supplier_details.supplier_id_source` |
-| Proveedor | `supplier_tax_id` | `ProcedimientoAdjudicacion.CEDULA_PROVEEDOR` | Se usa la cedula proveedor como identificador fiscal disponible | `mart.procurement_supplier_details.supplier_tax_id` |
-| Proveedor | `supplier_type` | `Proveedores.TIPO_PROVEEDOR` | Normaliza texto a catalogo MIRA: `PERSON`, `COMPANY`, `CONSORTIUM`, `FOREIGN_SUPPLIER`, `UNKNOWN` | `mart.procurement_supplier_details.supplier_type` |
+| Proveedor | `supplier_name` | `ProcedimientoAdjudicacion.NOMBRE_PROVEEDOR`; fallback `Proveedores.NOMBRE_PROVEEDOR` | Nombre normalizado y deduplicado | `mart.suppliers.name_normalised` |
+| Proveedor | `supplier_id_source` | `ProcedimientoAdjudicacion.CEDULA_PROVEEDOR` | Copia directa | `mart.suppliers.supplier_id_source` |
+| Proveedor | `supplier_tax_id` | `ProcedimientoAdjudicacion.CEDULA_PROVEEDOR` | Se usa la cedula proveedor como identificador fiscal disponible | `mart.suppliers.supplier_tax_id` |
+| Proveedor | `supplier_type` | `Proveedores.TIPO_PROVEEDOR` | Normaliza texto a catalogo MIRA: `PERSON`, `COMPANY`, `CONSORTIUM`, `FOREIGN_SUPPLIER`, `UNKNOWN` | `mart.suppliers.supplier_type` |
 | Bien o servicio | `item_description` | `ProcedimientoAdjudicacion.DESCR_BIEN_SERVICIO` | Copia directa | `mart.procurement_item_details.item_description` |
 | Bien o servicio | `category_source` | `ProcedimientoAdjudicacion.OBJETO_GASTO`; fallback `DetalleCarteles.CLAS_OBJ` | Copia directa | `mart.procurement_item_details.category_source` |
 | Bien o servicio | `category_normalised` | No disponible todavia | `NULL` hasta definir catalogo regional MIRA | `mart.procurement_item_details.category_normalised` |

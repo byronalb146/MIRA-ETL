@@ -13,8 +13,7 @@ from mira_etl.matching import normalise_name
 
 
 # Contract between sql/001_init.sql and every table written by this class.
-# Extra columns are allowed, but every column listed here must exist before an
-# ETL run starts.
+# Contracted tables must match exactly before an ETL run starts.
 SCHEMA_CONTRACT: dict[str, set[str]] = {
     "audit.etl_runs": {
         "id", "pipeline_name", "source", "period", "connector_version",
@@ -55,24 +54,21 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
         "awarded_amount", "currency_code",
     },
     "mart.procurement_buyer_details": {
-        "process_id", "buyer_name", "buyer_id_source", "buyer_tax_id", "buyer_id",
+        "process_id", "buyer_id",
     },
     "mart.procurement_supplier_details": {
-        "process_id", "supplier_name", "supplier_id_source", "supplier_tax_id",
-        "supplier_type", "supplier_id",
+        "process_id", "supplier_id",
     },
     "mart.procurement_item_details": {
         "process_id", "item_description", "category_source", "category_normalised",
     },
     "mart.suppliers": {
         "supplier_id", "country_code", "source_system", "supplier_tax_id",
-        "supplier_id_source", "supplier_name", "name_normalised", "supplier_type",
-        "match_method", "first_seen_at", "last_seen_at",
+        "supplier_id_source", "name_normalised", "supplier_type",
     },
     "mart.buyers": {
         "buyer_id", "country_code", "source_system", "buyer_tax_id",
-        "buyer_id_source", "buyer_name", "name_normalised", "match_method",
-        "first_seen_at", "last_seen_at",
+        "buyer_id_source", "name_normalised",
     },
 }
 
@@ -129,27 +125,16 @@ PROCESS_DETAIL_SQL = """
 """
 
 BUYER_DETAIL_SQL = """
-    insert into mart.procurement_buyer_details (
-        process_id, buyer_name, buyer_id_source, buyer_tax_id, buyer_id
-    )
-    values (%s, %s, %s, %s, %s)
+    insert into mart.procurement_buyer_details (process_id, buyer_id)
+    values (%s, %s)
     on conflict (process_id) do update set
-        buyer_name = excluded.buyer_name,
-        buyer_id_source = excluded.buyer_id_source,
-        buyer_tax_id = excluded.buyer_tax_id,
         buyer_id = excluded.buyer_id
 """
 
 SUPPLIER_DETAIL_SQL = """
-    insert into mart.procurement_supplier_details (
-        process_id, supplier_name, supplier_id_source, supplier_tax_id, supplier_type, supplier_id
-    )
-    values (%s, %s, %s, %s, %s, %s)
+    insert into mart.procurement_supplier_details (process_id, supplier_id)
+    values (%s, %s)
     on conflict (process_id) do update set
-        supplier_name = excluded.supplier_name,
-        supplier_id_source = excluded.supplier_id_source,
-        supplier_tax_id = excluded.supplier_tax_id,
-        supplier_type = excluded.supplier_type,
         supplier_id = excluded.supplier_id
 """
 
@@ -530,16 +515,17 @@ class Database:
                 (country_code, supplier_tax_id),
             )
             if existing:
-                self._touch("mart.suppliers", "supplier_id", existing["supplier_id"])
+                self._fill_missing_name(
+                    "mart.suppliers", "supplier_id", existing["supplier_id"], name_normalised
+                )
                 return int(existing["supplier_id"])
             return self._insert_entity(
                 "mart.suppliers", "supplier_id",
                 country_code=country_code, source_system=source_system,
                 tax_id_column="supplier_tax_id", tax_id=supplier_tax_id,
                 id_source_column="supplier_id_source", id_source=supplier_id_source,
-                name_column="supplier_name", name=supplier_name, name_normalised=name_normalised,
+                name_normalised=name_normalised,
                 extra_columns={"supplier_type": supplier_type},
-                match_method="TAX_ID",
             )
 
         if supplier_id_source:
@@ -549,16 +535,17 @@ class Database:
                 (country_code, source_system, supplier_id_source),
             )
             if existing:
-                self._touch("mart.suppliers", "supplier_id", existing["supplier_id"])
+                self._fill_missing_name(
+                    "mart.suppliers", "supplier_id", existing["supplier_id"], name_normalised
+                )
                 return int(existing["supplier_id"])
             return self._insert_entity(
                 "mart.suppliers", "supplier_id",
                 country_code=country_code, source_system=source_system,
                 tax_id_column="supplier_tax_id", tax_id=None,
                 id_source_column="supplier_id_source", id_source=supplier_id_source,
-                name_column="supplier_name", name=supplier_name, name_normalised=name_normalised,
+                name_normalised=name_normalised,
                 extra_columns={"supplier_type": supplier_type},
-                match_method="SOURCE_ID",
             )
 
         if name_normalised:
@@ -567,30 +554,20 @@ class Database:
                 (country_code, name_normalised),
             )
             if existing:
-                self._touch("mart.suppliers", "supplier_id", existing["supplier_id"])
+                self._fill_missing_name(
+                    "mart.suppliers", "supplier_id", existing["supplier_id"], name_normalised
+                )
                 return int(existing["supplier_id"])
             return self._insert_entity(
                 "mart.suppliers", "supplier_id",
                 country_code=country_code, source_system=source_system,
                 tax_id_column="supplier_tax_id", tax_id=None,
                 id_source_column="supplier_id_source", id_source=None,
-                name_column="supplier_name", name=supplier_name, name_normalised=name_normalised,
+                name_normalised=name_normalised,
                 extra_columns={"supplier_type": supplier_type},
-                match_method="NAME_EXACT_NORMALISED",
             )
 
-        if not supplier_name:
-            return None  # nothing at all to key on -- leave supplier_id NULL rather than guess
-
-        return self._insert_entity(
-            "mart.suppliers", "supplier_id",
-            country_code=country_code, source_system=source_system,
-            tax_id_column="supplier_tax_id", tax_id=None,
-            id_source_column="supplier_id_source", id_source=None,
-            name_column="supplier_name", name=supplier_name, name_normalised=None,
-            extra_columns={"supplier_type": supplier_type},
-            match_method="UNMATCHED",
-        )
+        return None
 
     def get_or_create_buyer(
         self,
@@ -610,15 +587,17 @@ class Database:
                 (country_code, buyer_tax_id),
             )
             if existing:
-                self._touch("mart.buyers", "buyer_id", existing["buyer_id"])
+                self._fill_missing_name(
+                    "mart.buyers", "buyer_id", existing["buyer_id"], name_normalised
+                )
                 return int(existing["buyer_id"])
             return self._insert_entity(
                 "mart.buyers", "buyer_id",
                 country_code=country_code, source_system=source_system,
                 tax_id_column="buyer_tax_id", tax_id=buyer_tax_id,
                 id_source_column="buyer_id_source", id_source=buyer_id_source,
-                name_column="buyer_name", name=buyer_name, name_normalised=name_normalised,
-                extra_columns={}, match_method="TAX_ID",
+                name_normalised=name_normalised,
+                extra_columns={},
             )
 
         if buyer_id_source:
@@ -628,15 +607,17 @@ class Database:
                 (country_code, source_system, buyer_id_source),
             )
             if existing:
-                self._touch("mart.buyers", "buyer_id", existing["buyer_id"])
+                self._fill_missing_name(
+                    "mart.buyers", "buyer_id", existing["buyer_id"], name_normalised
+                )
                 return int(existing["buyer_id"])
             return self._insert_entity(
                 "mart.buyers", "buyer_id",
                 country_code=country_code, source_system=source_system,
                 tax_id_column="buyer_tax_id", tax_id=None,
                 id_source_column="buyer_id_source", id_source=buyer_id_source,
-                name_column="buyer_name", name=buyer_name, name_normalised=name_normalised,
-                extra_columns={}, match_method="SOURCE_ID",
+                name_normalised=name_normalised,
+                extra_columns={},
             )
 
         if name_normalised:
@@ -645,28 +626,20 @@ class Database:
                 (country_code, name_normalised),
             )
             if existing:
-                self._touch("mart.buyers", "buyer_id", existing["buyer_id"])
+                self._fill_missing_name(
+                    "mart.buyers", "buyer_id", existing["buyer_id"], name_normalised
+                )
                 return int(existing["buyer_id"])
             return self._insert_entity(
                 "mart.buyers", "buyer_id",
                 country_code=country_code, source_system=source_system,
                 tax_id_column="buyer_tax_id", tax_id=None,
                 id_source_column="buyer_id_source", id_source=None,
-                name_column="buyer_name", name=buyer_name, name_normalised=name_normalised,
-                extra_columns={}, match_method="NAME_EXACT_NORMALISED",
+                name_normalised=name_normalised,
+                extra_columns={},
             )
 
-        if not buyer_name:
-            return None
-
-        return self._insert_entity(
-            "mart.buyers", "buyer_id",
-            country_code=country_code, source_system=source_system,
-            tax_id_column="buyer_tax_id", tax_id=None,
-            id_source_column="buyer_id_source", id_source=None,
-            name_column="buyer_name", name=buyer_name, name_normalised=None,
-            extra_columns={}, match_method="UNMATCHED",
-        )
+        return None
 
     def _insert_entity(
         self,
@@ -679,19 +652,16 @@ class Database:
         tax_id: str | None,
         id_source_column: str,
         id_source: str | None,
-        name_column: str,
-        name: str | None,
         name_normalised: str | None,
         extra_columns: dict[str, Any],
-        match_method: str,
     ) -> int:
         columns = [
             "country_code", "source_system", tax_id_column, id_source_column,
-            name_column, "name_normalised", "match_method", *extra_columns.keys(),
+            "name_normalised", *extra_columns.keys(),
         ]
         values = [
             country_code, source_system, tax_id, id_source,
-            name, name_normalised, match_method, *extra_columns.values(),
+            name_normalised, *extra_columns.values(),
         ]
         placeholders = ", ".join(["%s"] * len(values))
         row = self.fetch_one(
@@ -701,8 +671,19 @@ class Database:
         assert row is not None
         return int(row[id_column])
 
-    def _touch(self, table: str, id_column: str, entity_id: int) -> None:
-        self.execute(f"update {table} set last_seen_at = now() where {id_column} = %s", (entity_id,))
+    def _fill_missing_name(
+        self,
+        table: str,
+        id_column: str,
+        entity_id: int,
+        name_normalised: str | None,
+    ) -> None:
+        self.execute(
+            f"""update {table}
+                   set name_normalised = coalesce(name_normalised, %s)
+                 where {id_column} = %s""",
+            (name_normalised, entity_id),
+        )
 
     def upsert_mart_split_records(self, records: Iterable[dict[str, Any]]) -> int:
         record_list = list(records)
@@ -743,9 +724,7 @@ class Database:
                 buyer_id_source=record.get("buyer_id_source"),
                 buyer_name=record.get("buyer_name"),
             )
-            buyer_rows.append(
-                (process_id, record.get("buyer_name"), record.get("buyer_id_source"), record.get("buyer_tax_id"), buyer_id)
-            )
+            buyer_rows.append((process_id, buyer_id))
 
             supplier_id = self.get_or_create_supplier(
                 country_code=record["country_code"],
@@ -755,16 +734,7 @@ class Database:
                 supplier_name=record.get("supplier_name"),
                 supplier_type=record.get("supplier_type"),
             )
-            supplier_rows.append(
-                (
-                    process_id,
-                    record.get("supplier_name"),
-                    record.get("supplier_id_source"),
-                    record.get("supplier_tax_id"),
-                    record.get("supplier_type"),
-                    supplier_id,
-                )
-            )
+            supplier_rows.append((process_id, supplier_id))
             item_rows.append(
                 (
                     process_id,
@@ -811,5 +781,10 @@ def schema_mismatches(actual: dict[str, set[str]]) -> list[str]:
         if missing_columns:
             mismatches.append(
                 f"{table} missing columns {', '.join(missing_columns)}"
+            )
+        unexpected_columns = sorted(actual[table] - expected_columns)
+        if unexpected_columns:
+            mismatches.append(
+                f"{table} has unexpected columns {', '.join(unexpected_columns)}"
             )
     return mismatches

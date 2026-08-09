@@ -32,8 +32,7 @@ def normalise_name(value: str | None) -> str | None:
     This intentionally does NOT catch abbreviations, typos, or reordered
     words (e.g. "Const. del Norte" vs "Constructora del Norte") -- that is
     an accepted trade-off, see docs/entity_matching.md. Those cases get a
-    new dimension row (match_method = 'UNMATCHED') rather than risk merging
-    two different entities.
+    new dimension row rather than risk merging two different entities.
     """
     if not value:
         return None

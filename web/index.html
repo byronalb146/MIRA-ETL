@@ -541,8 +541,8 @@ function renderRecords(records, showCountryTag) {
 
   container.innerHTML = records.map(r => {
     const detail = r.process_details || {};
-    const buyer = r.buyer_details || {};
-    const supplier = r.supplier_details || {};
+    const buyer = r.buyer_details?.buyer || {};
+    const supplier = r.supplier_details?.supplier || {};
     const item = r.item_details || {};
     const statusLabel = STATUS_LABELS[detail.process_status] || detail.source_status || "Sin estado";
     const pub = formatDate(detail.publication_date);
@@ -558,8 +558,8 @@ function renderRecords(records, showCountryTag) {
           </div>
           <h3 class="record-title">${escapeHtml(detail.title || detail.description || "Proceso sin título")}</h3>
           <div class="record-meta">
-            ${buyer.buyer_name ? `<span>${escapeHtml(buyer.buyer_name)}</span>` : ""}
-            ${buyer.buyer_name && (pub || close) ? `<span class="dot">·</span>` : ""}
+            ${buyer.name_normalised ? `<span>${escapeHtml(buyer.name_normalised)}</span>` : ""}
+            ${buyer.name_normalised && (pub || close) ? `<span class="dot">·</span>` : ""}
             ${pub ? `<span>Publicado ${pub}</span>` : ""}
             ${pub && close ? `<span class="dot">·</span>` : ""}
             ${close ? `<span>Cierra ${close}</span>` : ""}
@@ -567,9 +567,9 @@ function renderRecords(records, showCountryTag) {
           ${detail.description && detail.description !== detail.title ? `<p class="record-description">${escapeHtml(detail.description)}</p>` : ""}
           ${item.category_source ? `<span class="record-category">${escapeHtml(item.category_source.split(";")[0])}</span>` : ""}
           ${item.item_description && item.item_description !== detail.description ? `<p class="record-description">${escapeHtml(item.item_description)}</p>` : ""}
-          ${supplier.supplier_name ? `
+          ${supplier.name_normalised ? `
             <div class="record-award">
-              <span>Adjudicado a ${escapeHtml(supplier.supplier_name)}</span>
+              <span>Adjudicado a ${escapeHtml(supplier.name_normalised)}</span>
               ${awardedAmount ? `<span class="amount">· ${escapeHtml(awardedAmount)}</span>` : ""}
             </div>` : ""}
         </div>
@@ -630,8 +630,8 @@ async function main() {
   const selectColumns = `
     process_id, country_code,
     process_details:procurement_process_details(process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, award_date, estimated_amount, awarded_amount, currency_code),
-    buyer_details:procurement_buyer_details(buyer_name, buyer_id_source, buyer_tax_id),
-    supplier_details:procurement_supplier_details(supplier_name, supplier_id_source, supplier_tax_id, supplier_type),
+    buyer_details:procurement_buyer_details(buyer:buyers(name_normalised)),
+    supplier_details:procurement_supplier_details(supplier:suppliers(name_normalised, supplier_type)),
     item_details:procurement_item_details(item_description, category_source, category_normalised)
   `;
 
@@ -682,8 +682,8 @@ async function main() {
     const status = statusFilter.value;
     const filtered = allRecords.filter(r => {
       const detail = r.process_details || {};
-      const buyer = r.buyer_details || {};
-      const supplier = r.supplier_details || {};
+      const buyer = r.buyer_details?.buyer || {};
+      const supplier = r.supplier_details?.supplier || {};
       const item = r.item_details || {};
       if (selectedCountry && r.country_code !== selectedCountry) return false;
       if (status && detail.process_status !== status) return false;
@@ -692,8 +692,8 @@ async function main() {
         detail.process_number,
         detail.title,
         detail.description,
-        buyer.buyer_name,
-        supplier.supplier_name,
+        buyer.name_normalised,
+        supplier.name_normalised,
         item.item_description,
         item.category_source,
       ].filter(Boolean).join(" ").toLowerCase();
@@ -702,7 +702,7 @@ async function main() {
 
     document.getElementById("stat-total").textContent = filtered.length;
     document.getElementById("stat-institutions").textContent =
-      new Set(filtered.map(r => r.buyer_details?.buyer_name).filter(Boolean)).size;
+      new Set(filtered.map(r => r.buyer_details?.buyer?.name_normalised).filter(Boolean)).size;
 
     const note = document.getElementById("country-filter-note");
     const noteParts = [];

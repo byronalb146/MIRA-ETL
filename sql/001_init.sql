@@ -125,23 +125,11 @@ create table if not exists mart.procurement_process_details (
 );
 
 create table if not exists mart.procurement_buyer_details (
-    process_id text primary key references mart.procurement_record_core(process_id),
-    buyer_name text,
-    buyer_id_source text,
-    buyer_tax_id text
+    process_id text primary key references mart.procurement_record_core(process_id)
 );
 
 create table if not exists mart.procurement_supplier_details (
-    process_id text primary key references mart.procurement_record_core(process_id),
-    supplier_name text,
-    supplier_id_source text,
-    supplier_tax_id text,
-    supplier_type text check (
-        supplier_type is null or supplier_type in (
-            'PERSON', 'COMPANY', 'CONSORTIUM', 'NONPROFIT',
-            'PUBLIC_ENTITY', 'FOREIGN_SUPPLIER', 'UNKNOWN'
-        )
-    )
+    process_id text primary key references mart.procurement_record_core(process_id)
 );
 
 create table if not exists mart.procurement_item_details (
@@ -174,9 +162,6 @@ create index if not exists idx_mart_record_core_source_record
 create index if not exists idx_mart_process_details_process_number
     on mart.procurement_process_details (process_number);
 
-create index if not exists idx_mart_supplier_details_tax_id
-    on mart.procurement_supplier_details (supplier_tax_id);
-
 create index if not exists idx_audit_validation_results_run
     on audit.validation_results (run_id, severity, rule_code);
 
@@ -189,19 +174,13 @@ create table if not exists mart.suppliers (
     source_system text not null,
     supplier_tax_id text,
     supplier_id_source text,
-    supplier_name text,
     name_normalised text,
     supplier_type text check (
         supplier_type is null or supplier_type in (
             'PERSON', 'COMPANY', 'CONSORTIUM', 'NONPROFIT',
             'PUBLIC_ENTITY', 'FOREIGN_SUPPLIER', 'UNKNOWN'
         )
-    ),
-    match_method text not null check (
-        match_method in ('TAX_ID', 'SOURCE_ID', 'NAME_EXACT_NORMALISED', 'UNMATCHED')
-    ),
-    first_seen_at timestamptz not null default now(),
-    last_seen_at timestamptz not null default now()
+    )
 );
 
 create index if not exists idx_suppliers_country_tax_id
@@ -222,13 +201,7 @@ create table if not exists mart.buyers (
     source_system text not null,
     buyer_tax_id text,
     buyer_id_source text,
-    buyer_name text,
-    name_normalised text,
-    match_method text not null check (
-        match_method in ('TAX_ID', 'SOURCE_ID', 'NAME_EXACT_NORMALISED', 'UNMATCHED')
-    ),
-    first_seen_at timestamptz not null default now(),
-    last_seen_at timestamptz not null default now()
+    name_normalised text
 );
 
 create index if not exists idx_buyers_country_tax_id
@@ -248,6 +221,30 @@ alter table mart.procurement_supplier_details
 
 alter table mart.procurement_buyer_details
     add column if not exists buyer_id bigint references mart.buyers(buyer_id);
+
+-- Entity names live only in buyers/suppliers as name_normalised. Source values
+-- remain available in raw and staging for auditability.
+drop view if exists mart.v_procurements_web;
+drop index if exists mart.idx_mart_supplier_details_tax_id;
+alter table mart.procurement_buyer_details
+    drop column if exists buyer_name,
+    drop column if exists buyer_id_source,
+    drop column if exists buyer_tax_id;
+alter table mart.procurement_supplier_details
+    drop column if exists supplier_name,
+    drop column if exists supplier_id_source,
+    drop column if exists supplier_tax_id,
+    drop column if exists supplier_type;
+alter table mart.buyers drop column if exists buyer_name;
+alter table mart.suppliers drop column if exists supplier_name;
+alter table mart.buyers
+    drop column if exists match_method,
+    drop column if exists first_seen_at,
+    drop column if exists last_seen_at;
+alter table mart.suppliers
+    drop column if exists match_method,
+    drop column if exists first_seen_at,
+    drop column if exists last_seen_at;
 
 create index if not exists idx_supplier_details_supplier_id
     on mart.procurement_supplier_details (supplier_id);

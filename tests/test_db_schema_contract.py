@@ -45,6 +45,14 @@ class DatabaseSchemaContractTest(unittest.TestCase):
             ],
         )
 
+    def test_reports_a_redundant_column(self) -> None:
+        actual = {table: set(columns) for table, columns in SCHEMA_CONTRACT.items()}
+        actual["mart.procurement_buyer_details"].add("buyer_name")
+        self.assertEqual(
+            schema_mismatches(actual),
+            ["mart.procurement_buyer_details has unexpected columns buyer_name"],
+        )
+
 
 def create_table_body(sql: str, table: str) -> str | None:
     match = re.search(

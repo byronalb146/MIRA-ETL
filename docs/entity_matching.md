@@ -1,15 +1,15 @@
 # Resolucion de entidades: proveedores y compradores
 
-`mart.procurement_supplier_details` y `mart.procurement_buyer_details` estaban
-disenadas 1-a-1 con cada proceso (`process_id` como llave primaria). Eso
-significa que la misma empresa, si gana o participa en varios procesos,
-repetia su nombre/RUC en cada fila, sin ninguna relacion explicita entre
-ellas -- buscar "todos los procesos de la empresa X" requeria comparar texto,
-fragil ante mayusculas, espacios o variantes de escritura.
+`mart.procurement_supplier_details` y `mart.procurement_buyer_details` son
+relaciones 1-a-1 con cada proceso (`process_id` como llave primaria). Solo
+guardan `supplier_id` o `buyer_id`; no repiten nombre, identificador fiscal ni
+identificador fuente.
 
 `sql/001_init.sql` incluye dos tablas de dimension
 (`mart.suppliers`, `mart.buyers`) con un ID propio, y una columna
 `supplier_id` / `buyer_id` en las tablas de detalle que las referencia.
+El nombre existe una sola vez en `name_normalised`. La grafia original queda
+en RAW y staging para auditoria.
 
 ## Estrategia de match: tres niveles, en orden de confianza
 
@@ -29,17 +29,9 @@ fila de dimension:
    acentos/puntuacion, sin sufijos legales comunes como "S.A.", "C.A.",
    "SOCIEDAD ANONIMA" -- ver `src/mira_etl/matching.py`). Solo se usa si no
    hay ninguno de los dos anteriores.
-4. **`UNMATCHED`** -- no hay tax_id, ni source_id, ni siquiera un nombre.
-   Se crea una fila nueva sin intentar relacionarla con nada (o, si tampoco
-   hay nombre, no se crea fila en absoluto y `supplier_id`/`buyer_id` queda
-   `NULL` -- ver mas abajo).
-
-Cada fila de `mart.suppliers`/`mart.buyers` guarda en `match_method` cual
-fue el mejor nivel de informacion disponible cuando se creo -- no si "hubo
-una fusion", sino que tipo de llave la identifica. Esto permite despues
-auditar por separado los grupos de alta confianza (`TAX_ID`, `SOURCE_ID`) de
-los agrupados solo por nombre (`NAME_EXACT_NORMALISED`), sin tener que
-confiar en toda la tabla por igual.
+El orden anterior se usa durante la carga, pero no se guarda como una columna:
+la tabla final conserva solamente los datos necesarios para identificar y
+relacionar la entidad.
 
 ## Riesgo aceptado explicitamente
 

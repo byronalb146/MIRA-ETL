@@ -66,9 +66,9 @@ esta version -- son procesos que, por definicion, aun no tienen adjudicacion.
 | Identificacion | `process_number` | Primera celda del listado, parte numerica (ej. `5/2026`) | Copia directa | `mart.procurement_process_details.process_number` |
 | Identificacion | `title` | No existe campo separado -> se usa `descripcion` | SISCAE no distingue titulo de descripcion | `mart.procurement_process_details.title` |
 | Identificacion | `description` | Texto libre tras el ultimo codigo de categoria en el bloque de detalle | Copia directa | `mart.procurement_process_details.description` |
-| Comprador | `buyer_name` | Bloque de detalle, texto entre "Ultima Actualizacion: \<fecha\>" y el separador " - " | Copia directa | `mart.procurement_buyer_details.buyer_name` |
-| Comprador | `buyer_id_source` | No expuesto en el registro individual | `NULL` | `mart.procurement_buyer_details.buyer_id_source` |
-| Comprador | `buyer_tax_id` | No existe en la fuente | `NULL` | `mart.procurement_buyer_details.buyer_tax_id` |
+| Comprador | `buyer_name` | Bloque de detalle, texto entre "Ultima Actualizacion: \<fecha\>" y el separador " - " | Nombre normalizado y deduplicado | `mart.buyers.name_normalised` |
+| Comprador | `buyer_id_source` | No expuesto en el registro individual | `NULL` | `mart.buyers.buyer_id_source` |
+| Comprador | `buyer_tax_id` | No existe en la fuente | `NULL` | `mart.buyers.buyer_tax_id` |
 | Contratacion | `procurement_method` | Primera celda del listado, parte de texto (ej. `LICITACION SELECTIVA`) | Copia directa | `mart.procurement_process_details.procurement_method` |
 | Contratacion | `process_status` | Bloque de detalle, etiqueta "Estado:" | Normaliza a catalogo MIRA via `STATUS_MAP` (`Vigente -> OPEN`, ver `transform_ni.py`) | `mart.procurement_process_details.process_status` |
 | Contratacion | `source_status` | Bloque de detalle, etiqueta "Estado:" | Valor original de la fuente, sin normalizar | `mart.procurement_process_details.source_status` |
@@ -78,9 +78,9 @@ esta version -- son procesos que, por definicion, aun no tienen adjudicacion.
 | Montos | `estimated_amount` | No expuesto en ningun punto de la fuente revisado | `NULL` | `mart.procurement_process_details.estimated_amount` |
 | Montos | `awarded_amount` | No aplica en esta version del conector (ver "Alcance") | `NULL` | `mart.procurement_process_details.awarded_amount` |
 | Montos | `currency_code` | No aplica en esta version del conector | `NULL` | `mart.procurement_process_details.currency_code` |
-| Proveedor | `supplier_name` | No aplica en esta version del conector | `NULL` | `mart.procurement_supplier_details.supplier_name` |
-| Proveedor | `supplier_id_source` | No aplica en esta version del conector | `NULL` | `mart.procurement_supplier_details.supplier_id_source` |
-| Proveedor | `supplier_tax_id` | No aplica en esta version del conector | `NULL` | `mart.procurement_supplier_details.supplier_tax_id` |
+| Proveedor | `supplier_name` | No aplica en esta version del conector | `NULL` | `mart.suppliers.name_normalised` |
+| Proveedor | `supplier_id_source` | No aplica en esta version del conector | `NULL` | `mart.suppliers.supplier_id_source` |
+| Proveedor | `supplier_tax_id` | No aplica en esta version del conector | `NULL` | `mart.suppliers.supplier_tax_id` |
 | Proveedor | `supplier_type` | No existe ningun campo nativo en la fuente | `NULL` | `mart.procurement_supplier_details.supplier_type` |
 | Bien o servicio | `item_description` | Igual que `description` -- no hay desglose de items individuales | Copia directa | `mart.procurement_item_details.item_description` |
 | Bien o servicio | `category_source` | Bloque de detalle, fragmentos `"texto (codigo de 8 digitos)"`, tipo UNSPSC | Union de todos los codigos encontrados, separados por `; ` | `mart.procurement_item_details.category_source` |
