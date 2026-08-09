@@ -24,4 +24,5 @@ src/mira_etl.egg-info/entry_points.txt
 src/mira_etl.egg-info/requires.txt
 src/mira_etl.egg-info/top_level.txt
 tests/test_connector_routing.py
+tests/test_db_schema_contract.py
 tests/test_guatemala_streaming.py

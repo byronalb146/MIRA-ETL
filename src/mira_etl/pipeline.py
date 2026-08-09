@@ -32,6 +32,7 @@ def run_pipeline(
     work_dir.mkdir(parents=True, exist_ok=True)
 
     with Database.from_env() as db:
+        db.validate_schema()
         run_id = db.insert_run(
             source=config.source,
             period=period,
@@ -282,13 +283,11 @@ def flush_guatemala_batch(
 def insert_row_count(
     db: Database, run_id: int, layer_name: str, table_name: str, row_count: int,
 ) -> None:
-    db.execute(
-        """
-        insert into audit.etl_row_counts
-            (run_id, layer_name, table_name, row_count)
-        values (%s, %s, %s, %s)
-        """,
-        (run_id, layer_name, table_name, row_count),
+    db.insert_row_count(
+        run_id=run_id,
+        layer_name=layer_name,
+        table_name=table_name,
+        row_count=row_count,
     )
 
 

@@ -73,6 +73,10 @@ Crear esquemas/tablas:
 .venv\Scripts\mira-etl init-db
 ```
 
+`init-db` crea o actualiza las tablas sin borrar datos y valida que el esquema
+coincida con las tablas y columnas utilizadas por `db.py`. Cada corrida `run`
+repite esa validación antes de insertar su primer registro.
+
 ## Flujo
 
 ```text

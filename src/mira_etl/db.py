@@ -12,6 +12,71 @@ from mira_etl.env import load_dotenv
 from mira_etl.matching import normalise_name
 
 
+# Contract between sql/001_init.sql and every table written by this class.
+# Extra columns are allowed, but every column listed here must exist before an
+# ETL run starts.
+SCHEMA_CONTRACT: dict[str, set[str]] = {
+    "audit.etl_runs": {
+        "id", "pipeline_name", "source", "period", "connector_version",
+        "status", "started_at", "finished_at", "error_message",
+    },
+    "audit.etl_row_counts": {
+        "row_count_id", "run_id", "layer_name", "table_name", "row_count",
+        "created_at",
+    },
+    "audit.validation_results": {
+        "validation_id", "run_id", "source", "period", "source_record_id",
+        "raw_payload_hash", "rule_code", "severity", "field_name",
+        "raw_value", "normalised_value", "message", "payload", "created_at",
+    },
+    "raw.source_files": {
+        "source_file_id", "run_id", "source", "period", "filename",
+        "file_hash", "row_count", "loaded_at",
+    },
+    "raw.source_rows": {
+        "source_row_id", "run_id", "source_file_id", "row_number", "payload",
+        "loaded_at",
+    },
+    "staging.normalized_candidates": {
+        "candidate_id", "run_id", "source", "period", "source_record_id",
+        "raw_payload_hash", "payload", "created_at",
+    },
+    "mart.procurement_record_core": {
+        "process_id", "country_code", "source_system", "source_record_id",
+        "source_url", "extracted_at", "source_last_modified_at",
+        "connector_version", "raw_payload", "raw_payload_hash",
+        "normalisation_status", "normalised_at", "data_quality_status",
+        "missing_fields",
+    },
+    "mart.procurement_process_details": {
+        "process_id", "process_number", "title", "description",
+        "procurement_method", "process_status", "source_status",
+        "publication_date", "closing_date", "award_date", "estimated_amount",
+        "awarded_amount", "currency_code",
+    },
+    "mart.procurement_buyer_details": {
+        "process_id", "buyer_name", "buyer_id_source", "buyer_tax_id", "buyer_id",
+    },
+    "mart.procurement_supplier_details": {
+        "process_id", "supplier_name", "supplier_id_source", "supplier_tax_id",
+        "supplier_type", "supplier_id",
+    },
+    "mart.procurement_item_details": {
+        "process_id", "item_description", "category_source", "category_normalised",
+    },
+    "mart.suppliers": {
+        "supplier_id", "country_code", "source_system", "supplier_tax_id",
+        "supplier_id_source", "supplier_name", "name_normalised", "supplier_type",
+        "match_method", "first_seen_at", "last_seen_at",
+    },
+    "mart.buyers": {
+        "buyer_id", "country_code", "source_system", "buyer_tax_id",
+        "buyer_id_source", "buyer_name", "name_normalised", "match_method",
+        "first_seen_at", "last_seen_at",
+    },
+}
+
+
 CORE_SQL = """
     insert into mart.procurement_record_core (
         process_id, country_code, source_system, source_record_id, source_url,
@@ -139,6 +204,48 @@ class Database:
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None:
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
+
+    def validate_schema(self) -> None:
+        """Fail before loading when PostgreSQL does not match our SQL contract."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                select table_schema, table_name, column_name
+                  from information_schema.columns
+                 where table_schema in ('raw', 'staging', 'mart', 'audit')
+                """
+            )
+            rows = cur.fetchall()
+
+        actual: dict[str, set[str]] = {}
+        for row in rows:
+            table = f"{row['table_schema']}.{row['table_name']}"
+            actual.setdefault(table, set()).add(row["column_name"])
+
+        mismatches = schema_mismatches(actual)
+        if mismatches:
+            details = "; ".join(mismatches)
+            raise RuntimeError(
+                "Database schema does not match sql/001_init.sql: " + details
+                + ". Run `mira-etl init-db` with the same SUPABASE_DB_URL."
+            )
+
+    def insert_row_count(
+        self,
+        *,
+        run_id: int,
+        layer_name: str,
+        table_name: str,
+        row_count: int,
+    ) -> None:
+        self.execute(
+            """
+            insert into audit.etl_row_counts
+                (run_id, layer_name, table_name, row_count)
+            values (%s, %s, %s, %s)
+            """,
+            (run_id, layer_name, table_name, row_count),
+        )
 
     def insert_run(self, *, source: str, period: str, connector_version: str) -> int:
         row = self.fetch_one(
@@ -692,3 +799,17 @@ def ensure_sslmode(dsn: str) -> str:
         return dsn
     separator = "&" if "?" in dsn else "?"
     return f"{dsn}{separator}sslmode=require"
+
+
+def schema_mismatches(actual: dict[str, set[str]]) -> list[str]:
+    mismatches: list[str] = []
+    for table, expected_columns in SCHEMA_CONTRACT.items():
+        if table not in actual:
+            mismatches.append(f"missing table {table}")
+            continue
+        missing_columns = sorted(expected_columns - actual[table])
+        if missing_columns:
+            mismatches.append(
+                f"{table} missing columns {', '.join(missing_columns)}"
+            )
+    return mismatches

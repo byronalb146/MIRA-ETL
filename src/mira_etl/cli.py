@@ -36,6 +36,8 @@ def main() -> None:
         with Database.from_env() as db:
             for sql_file in sorted(Path("sql").glob("*.sql")):
                 db.execute_sql_file(sql_file)
+            db.validate_schema()
+        print("Database schema initialized and validated.")
         return
 
     if args.command == "run":

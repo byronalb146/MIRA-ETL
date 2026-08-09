@@ -80,14 +80,6 @@ create index if not exists idx_raw_source_rows_payload_gin
 create index if not exists idx_staging_candidates_payload_gin
     on staging.normalized_candidates using gin (payload);
 
-drop table if exists mart.procurement_records;
-drop table if exists mart.procurement_award_details;
-drop table if exists mart.procurement_item_details;
-drop table if exists mart.procurement_supplier_details;
-drop table if exists mart.procurement_buyer_details;
-drop table if exists mart.procurement_process_details;
-drop table if exists mart.procurement_record_core;
-
 create table if not exists mart.procurement_record_core (
     process_id text primary key,
     country_code text not null,

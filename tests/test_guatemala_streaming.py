@@ -45,7 +45,7 @@ class FakeDatabase:
     def update_source_file_row_count(self, source_file_id: int, row_count: int) -> None:
         self.source_row_count = row_count
 
-    def execute(self, sql: str, params: tuple[Any, ...]) -> None:
+    def insert_row_count(self, **kwargs: Any) -> None:
         pass
 
 
