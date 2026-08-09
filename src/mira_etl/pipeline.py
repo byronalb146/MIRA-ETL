@@ -98,7 +98,7 @@ def obtain_source_rows(
     if download_type == "html_session_scrape":
         if local_zip is not None:
             raise ValueError("--local-zip is not valid for an HTML source")
-        from mira_etl.extract_ni import scrape_siscae
+        from mira_etl.extract_html import scrape_siscae
 
         source_rows = scrape_siscae(period, limit=limit)
         hashes = {name: rows_hash(rows) for name, rows in source_rows.items()}

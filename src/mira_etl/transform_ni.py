@@ -51,7 +51,7 @@ def build_records(
     there is no supplier/award data here by definition, since these processes
     have not been awarded yet. Awarded-process detail (supplier, RUC, awarded
     amount) needs a separate, not-yet-reliable navigation and is intentionally
-    left out (see extract_ni.scrape_siscae docstring).
+    left out (see extract_html.scrape_siscae docstring).
     """
     active_procedures = source_rows.get("procesos_vigentes", [])
     extracted_at = datetime.now(UTC)
@@ -110,7 +110,7 @@ def build_records(
 
 def build_source_record_id(row: dict[str, str | None]) -> str:
     """SISCAE's own reference code (Codigo SIGAF) is frequently unset (rendered
-    as a literal "#" placeholder, already normalised to None in extract_ni).
+    as a literal "#" placeholder, already normalised to None in extract_html).
     Fall back to a composite of procedure type + number + buyer, which is
     stable across re-scrapes of the same listing."""
     sigaf_code = row.get("codigo_sigaf")

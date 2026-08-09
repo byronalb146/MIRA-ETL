@@ -18,7 +18,7 @@ conector abre una sesion, sube el listado a 100 resultados por pagina, y seguido
 la paginacion confirmada empiricamente para extraer el listado completo.
 
 Por esto, `config/sources/nicaragua_siscae.json` usa `download.type =
-"html_session_scrape"` en vez de `"http_zip"`, y `src/mira_etl/extract_ni.py`
+"html_session_scrape"` en vez de `"http_zip"`, y `src/mira_etl/extract_html.py`
 reemplaza a `extract.py` (que sigue siendo exclusivo de fuentes ZIP). El resto
 del pipeline (raw -> staging -> mart -> audit) no cambia.
 
