@@ -7,18 +7,5 @@
     "type": "http_zip_json",
     "bootstrap_url": "https://ocds.guatecompras.gt/",
     "url_template": "https://ocds.guatecompras.gt/file/json/{year}/{month}"
-  },
-  "files": {
-    "required": [],
-    "optional": []
-  },
-  "csv": {
-    "default_delimiter": ";",
-    "delimiters": {},
-    "encoding": "utf-8"
-  },
-  "processing": {
-    "batch_size": 250,
-    "record_limit": null
   }
 }

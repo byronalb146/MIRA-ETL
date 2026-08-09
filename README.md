@@ -78,20 +78,16 @@ $env:SUPABASE_DB_URL="postgresql://..."
 .venv\Scripts\mira-etl run --source nicaragua_siscae --period 202607
 ```
 
-Guatemala se lee incrementalmente con `ijson` y se carga en lotes. El tamaño
-del lote y un límite opcional se configuran en
-`config/sources/guatemala_guatecompras.json`:
+Las fuentes `http_zip_json` se leen incrementalmente con `ijson` y se cargan en
+lotes. Guatemala usa este mecanismo hoy; otros paises pueden reutilizarlo con
+su propio transformador. El tamaño del lote se configura por entorno:
 
-```json
-"processing": {
-  "batch_size": 250,
-  "record_limit": null
-}
+```powershell
+$env:MIRA_JSON_BATCH_SIZE="250"
 ```
 
-Usa un número en `record_limit` para una prueba acotada y `null` para procesar
-el archivo completo. En cualquier conector, `--limit N` sobrescribe el límite
-de configuración durante pruebas puntuales.
+Si no se define, el ETL usa `250`. En cualquier conector, `--limit N` limita
+registros durante pruebas puntuales.
 
 Cada país se ejecuta individualmente. Guatemala y Costa Rica usan `--period`
 para seleccionar la descarga histórica. Nicaragua es un flujo separado: SISCAE

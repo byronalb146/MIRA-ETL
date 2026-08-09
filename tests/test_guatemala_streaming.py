@@ -5,9 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from mira_etl.config import SourceConfig
-from mira_etl.pipeline import process_guatemala
+from mira_etl.pipeline import process_json_records
 
 
 class FakeDatabase:
@@ -49,7 +50,16 @@ class FakeDatabase:
         pass
 
 
-class GuatemalaStreamingTest(unittest.TestCase):
+class JsonStreamingTest(unittest.TestCase):
+    def test_json_config_uses_env_batch_size(self) -> None:
+        config = SourceConfig.load(
+            Path(__file__).parents[1] / "config" / "sources",
+            "guatemala_guatecompras",
+        )
+
+        with patch.dict("os.environ", {"MIRA_JSON_BATCH_SIZE": "7"}):
+            self.assertEqual(config.batch_size, 7)
+
     def test_processes_records_in_configured_batches(self) -> None:
         config = SourceConfig(
             source="guatemala_guatecompras",
@@ -73,7 +83,7 @@ class GuatemalaStreamingTest(unittest.TestCase):
             json_path.write_text(json.dumps(payload), encoding="utf-8")
             db = FakeDatabase()
 
-            process_guatemala(
+            process_json_records(
                 db=db,  # type: ignore[arg-type]
                 run_id=1,
                 config=config,

@@ -43,7 +43,7 @@ def run_pipeline(
             if download_type == "http_zip_json":
                 zip_path = obtain_zip(config, period, work_dir, local_zip)
                 extract_dir = extract_zip(zip_path, work_dir, config.source, period)
-                process_guatemala(
+                process_json_records(
                     db=db,
                     run_id=run_id,
                     config=config,
@@ -241,7 +241,7 @@ def load_records(
     insert_row_count(db, run_id, "mart", "procurement_record_core", inserted)
 
 
-def process_guatemala(
+def process_json_records(
     *,
     db: Database,
     run_id: int,
@@ -269,10 +269,10 @@ def process_guatemala(
     with json_path.open("rb") as fh:
         for row in ijson.items(fh, "records.item"):
             if not isinstance(row, dict):
-                raise ValueError("Every Guatemala OCDS records item must be an object")
+                raise ValueError("Every JSON records item must be an object")
             raw_batch.append(row)
             record_batch.append(
-                build_record_gt(
+                build_json_record(
                     config=config,
                     period=period,
                     connector_version=connector_version,
@@ -280,7 +280,7 @@ def process_guatemala(
                 )
             )
             if len(raw_batch) >= batch_size:
-                flush_guatemala_batch(
+                flush_record_batch(
                     db=db, run_id=run_id, source_file_id=source_file_id,
                     source=config.source, period=period, raw_batch=raw_batch,
                     record_batch=record_batch, batch_size=batch_size, totals=totals,
@@ -289,7 +289,7 @@ def process_guatemala(
                 break
 
     if raw_batch:
-        flush_guatemala_batch(
+        flush_record_batch(
             db=db, run_id=run_id, source_file_id=source_file_id,
             source=config.source, period=period, raw_batch=raw_batch,
             record_batch=record_batch, batch_size=batch_size, totals=totals,
@@ -302,7 +302,29 @@ def process_guatemala(
     insert_row_count(db, run_id, "mart", "procurement_record_core", totals["mart"])
 
 
-def flush_guatemala_batch(
+def build_json_record(
+    *,
+    config: SourceConfig,
+    period: str,
+    connector_version: str,
+    source_row: dict[str, Any],
+) -> dict[str, Any]:
+    builders = {
+        "guatemala_guatecompras": build_record_gt,
+    }
+    try:
+        builder = builders[config.source]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported JSON source: {config.source}") from exc
+    return builder(
+        config=config,
+        period=period,
+        connector_version=connector_version,
+        source_row=source_row,
+    )
+
+
+def flush_record_batch(
     *, db: Database, run_id: int, source_file_id: int, source: str,
     period: str, raw_batch: list[dict[str, Any]],
     record_batch: list[dict[str, Any]], batch_size: int,

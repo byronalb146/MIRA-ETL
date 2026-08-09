@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from mira_etl.env import load_dotenv
 
 
 @dataclass(frozen=True)
@@ -13,8 +16,8 @@ class SourceConfig:
     source_system: str
     connector_version: str
     download: dict[str, Any]
-    files: dict[str, list[str]]
-    csv: dict[str, Any]
+    files: dict[str, list[str]] = field(default_factory=lambda: {"required": [], "optional": []})
+    csv: dict[str, Any] = field(default_factory=dict)
     processing: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -71,9 +74,15 @@ class SourceConfig:
 
     @property
     def batch_size(self) -> int:
-        value = int(self.processing.get("batch_size", 250))
+        load_dotenv()
+        env_value = (
+            os.environ.get("MIRA_JSON_BATCH_SIZE")
+            if self.download.get("type") == "http_zip_json"
+            else None
+        ) or os.environ.get("MIRA_ETL_BATCH_SIZE")
+        value = int(env_value or self.processing.get("batch_size", 250))
         if value < 1:
-            raise ValueError("processing.batch_size must be greater than zero")
+            raise ValueError("batch size must be greater than zero")
         return value
 
     @property
