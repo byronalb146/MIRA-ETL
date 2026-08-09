@@ -75,7 +75,7 @@ La normalizacion toma cada fila de `ProcedimientoAdjudicacion.csv` como una adju
 
 ## Datos Adicionales Conservados
 
-Aunque no todos los campos del ZIP tienen columna normalizada propia todavia, el ETL conserva el registro fuente completo en `raw` y tambien dentro de `raw_payload`.
+El ETL conserva en `raw` solo los archivos y filas que aportan al menos un campo al mart actual. Para cada registro normalizado tambien guarda en `raw_payload` las filas relacionadas usadas por la transformacion.
 
 Para cada registro normalizado se conserva:
 
@@ -92,25 +92,14 @@ Eso permite reprocesar o ampliar el modelo sin volver a descargar la fuente.
 
 ## Archivos del ZIP Cargados a Raw
 
-El conector carga a `raw.source_rows` los archivos requeridos y opcionales configurados:
+El conector carga a `raw.source_rows` solo las filas usadas por el mapping actual:
 
-- `DetalleCarteles.csv`
-- `ProcedimientoAdjudicacion.csv`
-- `InstitucionesRegistradas.csv`
-- `Proveedores.csv`
-- `FechaPorEtapas.csv`
-- `Ofertas.csv`
-- `LineasOfertadas.csv`
-- `LineasAdjudicadas.csv`
-- `Contratos.csv`
-- `LineasContratadas.csv`
-- `OrdenPedido.csv`
-- `Recepciones.csv`
-- `LineasRecibidas.csv`
-- `Garantias.csv`
-- `RecursosObjecion.csv`
-- `SancionProveedores.csv`
-- `SistemaEvaluacionOfertas.csv`
+- `ProcedimientoAdjudicacion.csv`: todas sus filas, porque cada una es una adjudicacion/linea normalizada.
+- `DetalleCarteles.csv`: solo filas cuyo `NRO_SICOP` aparece en `ProcedimientoAdjudicacion.csv`.
+- `InstitucionesRegistradas.csv`: solo filas cuya `CEDULA` aparece como comprador de las adjudicaciones o de sus carteles relacionados.
+- `Proveedores.csv`: solo filas cuya `CEDULA_PROVEEDOR` aparece en `ProcedimientoAdjudicacion.csv`.
+
+Los demas CSVs del ZIP quedan fuera hasta que alguna columna de ellos se incorpore a la normalizacion MIRA.
 
 ## Validaciones Auditadas
 

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from mira_etl.config import SourceConfig
-from mira_etl.pipeline import transform_source
+from mira_etl.pipeline import filter_source_rows_for_mart, transform_source
 
 
 CONFIG_DIR = Path(__file__).parents[1] / "config" / "sources"
@@ -53,6 +53,51 @@ class ConnectorRoutingTest(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["country_code"], "CR")
         self.assertTrue(records[0]["process_id"].startswith("MIRA-CR-"))
+
+    def test_costa_rica_raw_files_match_current_mart_mapping(self) -> None:
+        config = SourceConfig.load(CONFIG_DIR, "costa_rica_sicop")
+        self.assertEqual(
+            config.files,
+            {
+                "required": [
+                    "DetalleCarteles.csv",
+                    "ProcedimientoAdjudicacion.csv",
+                    "InstitucionesRegistradas.csv",
+                    "Proveedores.csv",
+                ],
+                "optional": [],
+            },
+        )
+
+    def test_costa_rica_raw_rows_keep_only_rows_used_by_mart(self) -> None:
+        rows = {
+            "DetalleCarteles.csv": [
+                {"NRO_SICOP": "SICOP-1", "CEDULA_INSTITUCION": "BUYER-1"},
+                {"NRO_SICOP": "SICOP-2", "CEDULA_INSTITUCION": "BUYER-2"},
+            ],
+            "ProcedimientoAdjudicacion.csv": [
+                {"NRO_SICOP": "SICOP-1", "CEDULA": "", "CEDULA_PROVEEDOR": "SUPPLIER-1"}
+            ],
+            "InstitucionesRegistradas.csv": [
+                {"CEDULA": "BUYER-1"},
+                {"CEDULA": "BUYER-2"},
+            ],
+            "Proveedores.csv": [
+                {"CEDULA_PROVEEDOR": "SUPPLIER-1"},
+                {"CEDULA_PROVEEDOR": "SUPPLIER-2"},
+            ],
+            "Ofertas.csv": [
+                {"NRO_SICOP": "SICOP-1"},
+            ],
+        }
+
+        filtered = filter_source_rows_for_mart("costa_rica_sicop", rows)
+
+        self.assertEqual(len(filtered["ProcedimientoAdjudicacion.csv"]), 1)
+        self.assertEqual(filtered["DetalleCarteles.csv"], [rows["DetalleCarteles.csv"][0]])
+        self.assertEqual(filtered["InstitucionesRegistradas.csv"], [rows["InstitucionesRegistradas.csv"][0]])
+        self.assertEqual(filtered["Proveedores.csv"], [rows["Proveedores.csv"][0]])
+        self.assertNotIn("Ofertas.csv", filtered)
 
     def test_nicaragua_uses_its_html_transformer(self) -> None:
         config = SourceConfig.load(CONFIG_DIR, "nicaragua_siscae")

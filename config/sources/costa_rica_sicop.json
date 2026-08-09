@@ -14,21 +14,7 @@
       "InstitucionesRegistradas.csv",
       "Proveedores.csv"
     ],
-    "optional": [
-      "FechaPorEtapas.csv",
-      "Ofertas.csv",
-      "LineasOfertadas.csv",
-      "LineasAdjudicadas.csv",
-      "Contratos.csv",
-      "LineasContratadas.csv",
-      "OrdenPedido.csv",
-      "Recepciones.csv",
-      "LineasRecibidas.csv",
-      "Garantias.csv",
-      "RecursosObjecion.csv",
-      "SancionProveedores.csv",
-      "SistemaEvaluacionOfertas.csv"
-    ]
+    "optional": []
   },
   "csv": {
     "default_delimiter": ";",

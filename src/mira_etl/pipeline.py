@@ -122,6 +122,7 @@ def obtain_source_rows(
                 )
             )
             hashes[filename] = file_hash(csv_path)
+        source_rows = filter_source_rows_for_mart(config.source, source_rows)
     else:
         raise ValueError(f"Unsupported download type: {download_type}")
 
@@ -142,6 +143,53 @@ def obtain_source_rows(
         )
 
     return source_rows
+
+
+def filter_source_rows_for_mart(
+    source: str,
+    source_rows: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    if source != "costa_rica_sicop":
+        return source_rows
+
+    adjudicaciones = source_rows.get("ProcedimientoAdjudicacion.csv", [])
+    nro_sicop_values = values_for(adjudicaciones, "NRO_SICOP")
+    supplier_ids = values_for(adjudicaciones, "CEDULA_PROVEEDOR")
+    buyer_ids = values_for(adjudicaciones, "CEDULA")
+
+    carteles = keep_rows_with_value(
+        source_rows.get("DetalleCarteles.csv", []),
+        "NRO_SICOP",
+        nro_sicop_values,
+    )
+    buyer_ids.update(values_for(carteles, "CEDULA_INSTITUCION"))
+
+    return {
+        "DetalleCarteles.csv": carteles,
+        "ProcedimientoAdjudicacion.csv": adjudicaciones,
+        "InstitucionesRegistradas.csv": keep_rows_with_value(
+            source_rows.get("InstitucionesRegistradas.csv", []),
+            "CEDULA",
+            buyer_ids,
+        ),
+        "Proveedores.csv": keep_rows_with_value(
+            source_rows.get("Proveedores.csv", []),
+            "CEDULA_PROVEEDOR",
+            supplier_ids,
+        ),
+    }
+
+
+def values_for(rows: list[dict[str, Any]], key: str) -> set[str]:
+    return {str(row[key]) for row in rows if row.get(key)}
+
+
+def keep_rows_with_value(
+    rows: list[dict[str, Any]],
+    key: str,
+    allowed_values: set[str],
+) -> list[dict[str, Any]]:
+    return [row for row in rows if row.get(key) and str(row[key]) in allowed_values]
 
 
 def transform_source(
