@@ -195,7 +195,32 @@ def extract_zip(zip_path: Path, work_dir: Path, source: str, period: str) -> Pat
     return extract_dir
 
 
+def resolve_dataset_dir(config: SourceConfig, extract_dir: Path) -> Path:
+    """Find the directory that contains all configured required files.
+
+    Some source ZIPs store their files at the archive root while others wrap the
+    same dataset in a period directory (for example, ``202401/``).
+    """
+    required = config.files["required"]
+    candidates = [extract_dir]
+    candidates.extend(path for path in extract_dir.rglob("*") if path.is_dir())
+
+    for candidate in candidates:
+        if all((candidate / name).is_file() for name in required):
+            return candidate
+
+    found_names = {
+        path.name
+        for path in extract_dir.rglob("*")
+        if path.is_file()
+    }
+    missing = [name for name in required if name not in found_names]
+    if not missing:
+        raise FileNotFoundError(
+            "Required files were found, but not in the same directory"
+        )
+    raise FileNotFoundError(f"Missing required files: {', '.join(missing)}")
+
+
 def validate_required_files(config: SourceConfig, extract_dir: Path) -> None:
-    missing = [name for name in config.files["required"] if not (extract_dir / name).exists()]
-    if missing:
-        raise FileNotFoundError(f"Missing required files: {', '.join(missing)}")
+    resolve_dataset_dir(config, extract_dir)
