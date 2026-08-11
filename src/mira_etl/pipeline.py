@@ -10,7 +10,7 @@ import ijson
 from mira_etl.config import SourceConfig
 from mira_etl.csvio import read_csv_rows
 from mira_etl.db import Database
-from mira_etl.extract import extract_zip, obtain_zip, validate_required_files
+from mira_etl.extract import extract_zip, obtain_zip, resolve_dataset_dir
 from mira_etl.transform_cr import build_records as build_records_cr
 from mira_etl.transform_gt import build_record as build_record_gt
 from mira_etl.transform_ni import build_records as build_records_ni
@@ -107,13 +107,13 @@ def obtain_source_rows(
     elif download_type == "http_zip_csv":
         zip_path = obtain_zip(config, period, work_dir, local_zip)
         extract_dir = extract_zip(zip_path, work_dir, config.source, period)
-        validate_required_files(config, extract_dir)
+        dataset_dir = resolve_dataset_dir(config, extract_dir)
         source_rows = {}
         source_counts = {}
         hashes = {}
         filenames = config.files["required"] + config.files.get("optional", [])
         for filename in filenames:
-            csv_path = extract_dir / filename
+            csv_path = dataset_dir / filename
             if not csv_path.exists():
                 continue
             source_rows[filename] = list(
