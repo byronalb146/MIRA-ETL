@@ -372,6 +372,40 @@
     font-size: 0.85em;
   }
 
+  .pagination {
+    max-width: 1100px;
+    margin: -72px auto 76px;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--ink-soft);
+    font-size: 0.84rem;
+  }
+  .pagination[hidden] { display: none; }
+  .page-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .page-button {
+    width: 38px;
+    height: 34px;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: var(--paper-raised);
+    color: var(--ink);
+    cursor: pointer;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 1rem;
+  }
+  .page-button:hover:not(:disabled) { border-color: var(--isthmus-light); }
+  .page-button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
   footer.site {
     border-top: 1px solid var(--line);
     padding: 28px 24px 40px;
@@ -391,6 +425,7 @@
     .record-card { grid-template-columns: 1fr; }
     .isthmus-strip { display: none; }
     .hero { padding-top: 48px; }
+    .pagination { align-items: flex-start; flex-direction: column; margin-top: -70px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -424,7 +459,7 @@
     </div>
     <div>
       <div class="stat-number" id="stat-institutions">—</div>
-      <div class="stat-label">Instituciones compradoras distintas</div>
+      <div class="stat-label">Instituciones compradoras registradas</div>
     </div>
     <div>
       <div class="stat-number" id="stat-countries">—<span style="font-size:1.4rem;">/6</span></div>
@@ -434,7 +469,7 @@
 </section>
 
 <div class="controls">
-  <input class="search-input" id="search" type="text" placeholder="Buscar por institución, número de proceso o descripción…" />
+  <input class="search-input" id="search" type="text" placeholder="Buscar por identificador o fuente del proceso..." />
   <select class="status-filter" id="status-filter">
     <option value="">Todos los estados</option>
   </select>
@@ -448,6 +483,14 @@
     <p>Consultando la base de datos de MIRA.</p>
   </div>
 </main>
+<nav class="pagination" id="pagination" aria-label="Paginacion" hidden>
+  <span id="pagination-summary"></span>
+  <div class="page-actions">
+    <button class="page-button" id="prev-page" type="button" aria-label="Pagina anterior">&lt;</button>
+    <span id="pagination-page"></span>
+    <button class="page-button" id="next-page" type="button" aria-label="Pagina siguiente">&gt;</button>
+  </div>
+</nav>
 
 <footer class="site">
   <div class="footer-inner">
@@ -489,6 +532,12 @@ const STATUS_TONES = {
 };
 
 let selectedCountry = null; // null = todos los países con datos
+let currentPage = 1;
+let currentTotal = 0;
+let countryTotals = {};
+let buyerTotals = {};
+let liveCountries = new Set();
+const PAGE_SIZE = 25;
 
 function renderIsthmusStrip(el, liveCodes, onSelect) {
   el.innerHTML = "";
@@ -746,7 +795,228 @@ async function main() {
   applyFilters();
 }
 
-main();
+async function mainPaginated() {
+  if (SUPABASE_ANON_KEY === "PEGA_AQUI_TU_ANON_KEY") {
+    document.getElementById("records-container").innerHTML = `
+      <div class="state-block">
+        <h3>Falta configurar la conexion</h3>
+        <p>Abre este archivo y reemplaza <code class="inline">SUPABASE_ANON_KEY</code> con la llave publica de tu proyecto.</p>
+      </div>`;
+    return;
+  }
+
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    db: { schema: "mart" },
+  });
+
+  async function countRows(table, filters = []) {
+    let query = supabase.from(table).select("*", { count: "exact", head: true });
+    filters.forEach(([column, value]) => { query = query.eq(column, value); });
+    return query;
+  }
+
+  const countryCountResults = await Promise.all(
+    COUNTRY_ORDER.map(c => countRows("procurement_record_core", [["country_code", c.code]]))
+  );
+  const countryError = countryCountResults.find(r => r.error)?.error;
+  if (countryError) {
+    document.getElementById("records-container").innerHTML = `
+      <div class="state-block">
+        <h3>No se pudo conectar a la base de datos</h3>
+        <p>${escapeHtml(countryError.message)}</p>
+      </div>`;
+    return;
+  }
+
+  countryTotals = Object.fromEntries(
+    COUNTRY_ORDER.map((c, index) => [c.code, countryCountResults[index].count || 0])
+  );
+  liveCountries = new Set(Object.entries(countryTotals).filter(([, total]) => total > 0).map(([code]) => code));
+
+  const buyerCountResults = await Promise.all(
+    COUNTRY_ORDER.map(c => countRows("buyers", [["country_code", c.code]]))
+  );
+  buyerTotals = Object.fromEntries(
+    COUNTRY_ORDER.map((c, index) => [c.code, buyerCountResults[index].count || 0])
+  );
+
+  document.getElementById("stat-countries").innerHTML = `${liveCountries.size}<span style="font-size:1.4rem;">/6</span>`;
+
+  const selectColumns = `
+    process_id, country_code, source_record_id, source_system,
+    process_details:procurement_process_details!inner(process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, award_date, estimated_amount, awarded_amount, currency_code),
+    buyer_details:procurement_buyer_details(buyer:buyers(name_normalised)),
+    supplier_details:procurement_supplier_details(supplier:suppliers(name_normalised, supplier_type)),
+    item_details:procurement_item_details(item_description, category_source, category_normalised)
+  `;
+
+  const statusFilter = document.getElementById("status-filter");
+  Object.keys(STATUS_LABELS).forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s;
+    opt.textContent = STATUS_LABELS[s] || s;
+    statusFilter.appendChild(opt);
+  });
+
+  function searchPattern() {
+    const q = document.getElementById("search").value.trim();
+    const clean = q.replace(/[,%()]/g, " ").replace(/\s+/g, " ").trim();
+    return clean ? `%${clean}%` : "";
+  }
+
+  function buildQuery() {
+    const status = statusFilter.value;
+    const pattern = searchPattern();
+    let query = supabase
+      .from("procurement_record_core")
+      .select(selectColumns, { count: "exact" });
+    if (selectedCountry) query = query.eq("country_code", selectedCountry);
+    if (status) query = query.eq("process_details.process_status", status);
+    if (pattern) {
+      query = query.or(
+        `process_id.ilike.${pattern},source_record_id.ilike.${pattern},source_system.ilike.${pattern}`
+      );
+    }
+    return query;
+  }
+
+  function totalBuyersForCurrentCountry() {
+    if (selectedCountry) return buyerTotals[selectedCountry] || 0;
+    return Object.values(buyerTotals).reduce((sum, value) => sum + value, 0);
+  }
+
+  function repaintIsthmus() {
+    renderIsthmusStrip(document.getElementById("isthmus-strip-header"), liveCountries, (code) => {
+      selectedCountry = code;
+      currentPage = 1;
+      repaintIsthmus();
+      loadPage();
+    });
+  }
+
+  function renderPagination(recordsShown) {
+    const pagination = document.getElementById("pagination");
+    const totalPages = Math.max(1, Math.ceil(currentTotal / PAGE_SIZE));
+    if (currentTotal === 0) {
+      pagination.hidden = true;
+      return;
+    }
+    const from = (currentPage - 1) * PAGE_SIZE + 1;
+    const to = from + recordsShown - 1;
+    pagination.hidden = false;
+    document.getElementById("pagination-summary").textContent =
+      `Mostrando ${from.toLocaleString("es-GT")}-${to.toLocaleString("es-GT")} de ${currentTotal.toLocaleString("es-GT")} procesos`;
+    document.getElementById("pagination-page").textContent = `${currentPage} / ${totalPages}`;
+    document.getElementById("prev-page").disabled = currentPage <= 1;
+    document.getElementById("next-page").disabled = currentPage >= totalPages;
+  }
+
+  function renderNote() {
+    const note = document.getElementById("country-filter-note");
+    const noteParts = [];
+    if (selectedCountry) {
+      const name = COUNTRY_ORDER.find(c => c.code === selectedCountry)?.name || selectedCountry;
+      noteParts.push(`Mostrando solo <strong>${escapeHtml(name)}</strong> · <a href="#" id="clear-country" style="color:var(--isthmus-light);text-decoration:underline;">ver todos los paises</a>`);
+    }
+    const visibleTotals = selectedCountry
+      ? [[selectedCountry, countryTotals[selectedCountry] || 0]]
+      : Object.entries(countryTotals).filter(([, total]) => total > 0);
+    const totalsText = visibleTotals
+      .map(([code, total]) => `${code}: ${total.toLocaleString("es-GT")}`)
+      .join(" · ");
+    if (totalsText) noteParts.push(`Total en core por pais: ${totalsText}.`);
+    if (noteParts.length > 0) {
+      note.style.display = "block";
+      note.innerHTML = noteParts.join(" · ");
+      const clearLink = document.getElementById("clear-country");
+      if (clearLink) {
+        clearLink.addEventListener("click", (e) => {
+          e.preventDefault();
+          selectedCountry = null;
+          currentPage = 1;
+          repaintIsthmus();
+          loadPage();
+        });
+      }
+    } else {
+      note.style.display = "none";
+    }
+  }
+
+  async function loadPage() {
+    const container = document.getElementById("records-container");
+    container.innerHTML = `
+      <div class="state-block">
+        <div class="spinner"></div>
+        <h3>Cargando procesos</h3>
+        <p>Consultando solo la pagina solicitada.</p>
+      </div>`;
+
+    const from = (currentPage - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    const { data, error, count } = await buildQuery()
+      .order("extracted_at", { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      container.innerHTML = `
+        <div class="state-block">
+          <h3>No se pudo consultar esta pagina</h3>
+          <p>${escapeHtml(error.message)}</p>
+        </div>`;
+      document.getElementById("pagination").hidden = true;
+      return;
+    }
+
+    const records = data || [];
+    currentTotal = count || 0;
+    const totalPages = Math.max(1, Math.ceil(currentTotal / PAGE_SIZE));
+    if (currentPage > totalPages) {
+      currentPage = totalPages;
+      await loadPage();
+      return;
+    }
+
+    document.getElementById("stat-total").textContent = currentTotal.toLocaleString("es-GT");
+    document.getElementById("stat-institutions").textContent =
+      totalBuyersForCurrentCountry().toLocaleString("es-GT");
+    document.getElementById("footer-updated").textContent =
+      `${records.length} procesos en pantalla · actualizado ${new Date().toLocaleString("es-GT")}`;
+
+    renderNote();
+    renderRecords(records, !selectedCountry && liveCountries.size > 1);
+    renderPagination(records.length);
+  }
+
+  repaintIsthmus();
+  let searchTimer = null;
+  document.getElementById("search").addEventListener("input", () => {
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => {
+      currentPage = 1;
+      loadPage();
+    }, 250);
+  });
+  statusFilter.addEventListener("change", () => {
+    currentPage = 1;
+    loadPage();
+  });
+  document.getElementById("prev-page").addEventListener("click", () => {
+    if (currentPage <= 1) return;
+    currentPage -= 1;
+    loadPage();
+  });
+  document.getElementById("next-page").addEventListener("click", () => {
+    const totalPages = Math.max(1, Math.ceil(currentTotal / PAGE_SIZE));
+    if (currentPage >= totalPages) return;
+    currentPage += 1;
+    loadPage();
+  });
+
+  loadPage();
+}
+
+mainPaginated();
 </script>
 </body>
 </html>
