@@ -74,12 +74,6 @@ create table if not exists staging.normalized_candidates (
     created_at timestamptz not null default now()
 );
 
-create index if not exists idx_raw_source_rows_payload_gin
-    on raw.source_rows using gin (payload);
-
-create index if not exists idx_staging_candidates_payload_gin
-    on staging.normalized_candidates using gin (payload);
-
 create table if not exists mart.procurement_record_core (
     process_id text primary key,
     country_code text not null,
@@ -156,17 +150,11 @@ create table if not exists audit.validation_results (
     created_at timestamptz not null default now()
 );
 
-create index if not exists idx_mart_record_core_source_record
-    on mart.procurement_record_core (source_system, source_record_id);
-
 create index if not exists idx_mart_record_core_country
     on mart.procurement_record_core (country_code);
 
 create index if not exists idx_mart_record_core_country_process
     on mart.procurement_record_core (country_code, process_id);
-
-create index if not exists idx_mart_process_details_process_number
-    on mart.procurement_process_details (process_number);
 
 create index if not exists idx_audit_validation_results_run
     on audit.validation_results (run_id, severity, rule_code);
@@ -189,18 +177,6 @@ create table if not exists mart.suppliers (
     )
 );
 
-create index if not exists idx_suppliers_country_tax_id
-    on mart.suppliers (country_code, supplier_tax_id)
-    where supplier_tax_id is not null;
-
-create index if not exists idx_suppliers_country_source_id
-    on mart.suppliers (country_code, source_system, supplier_id_source)
-    where supplier_id_source is not null;
-
-create index if not exists idx_suppliers_country_name_normalised
-    on mart.suppliers (country_code, name_normalised)
-    where name_normalised is not null;
-
 create table if not exists mart.buyers (
     buyer_id bigserial primary key,
     country_code text not null,
@@ -209,18 +185,6 @@ create table if not exists mart.buyers (
     buyer_id_source text,
     name_normalised text
 );
-
-create index if not exists idx_buyers_country_tax_id
-    on mart.buyers (country_code, buyer_tax_id)
-    where buyer_tax_id is not null;
-
-create index if not exists idx_buyers_country_source_id
-    on mart.buyers (country_code, source_system, buyer_id_source)
-    where buyer_id_source is not null;
-
-create index if not exists idx_buyers_country_name_normalised
-    on mart.buyers (country_code, name_normalised)
-    where name_normalised is not null;
 
 alter table mart.procurement_supplier_details
     add column if not exists supplier_id bigint references mart.suppliers(supplier_id);
@@ -295,3 +259,16 @@ on conflict (country_code) do update set
     process_count = excluded.process_count,
     buyer_count = excluded.buyer_count,
     refreshed_at = excluded.refreshed_at;
+
+-- Retired indexes: current ETL and web queries do not use these. Keeping the
+-- drops here also removes them from databases initialized by older versions.
+drop index if exists raw.idx_raw_source_rows_payload_gin;
+drop index if exists staging.idx_staging_candidates_payload_gin;
+drop index if exists mart.idx_mart_record_core_source_record;
+drop index if exists mart.idx_mart_process_details_process_number;
+drop index if exists mart.idx_suppliers_country_tax_id;
+drop index if exists mart.idx_suppliers_country_source_id;
+drop index if exists mart.idx_suppliers_country_name_normalised;
+drop index if exists mart.idx_buyers_country_tax_id;
+drop index if exists mart.idx_buyers_country_source_id;
+drop index if exists mart.idx_buyers_country_name_normalised;
