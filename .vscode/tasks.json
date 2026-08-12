@@ -211,7 +211,7 @@
     {
       "id": "period",
       "type": "promptString",
-      "description": "Período YYYYMM"
+      "description": "Período YYYYMM o rango YYYYMM - YYYYMM"
     },
     {
       "id": "gtPeriod",

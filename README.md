@@ -70,6 +70,17 @@ $env:SUPABASE_DB_URL="postgresql://..."
 .venv\Scripts\mira-etl run --source costa_rica_sicop --period 202001
 ```
 
+Ejecutar un rango mensual inclusivo para un país histórico:
+
+```powershell
+.venv\Scripts\mira-etl run --source costa_rica_sicop --period "202501 - 202512"
+```
+
+También se acepta el formato compacto `202501-202512`. Cada mes se procesa
+como una corrida independiente y queda registrado por separado en auditoría.
+Un rango no puede combinarse con `--local-zip`, porque cada período requiere
+su propio archivo o descarga.
+
 Ejecutar el conector de Nicaragua (no usa `--local-zip` ni `--period`; SISCAE
 siempre trae el estado vigente al momento de ejecutar):
 
@@ -90,7 +101,7 @@ Si no se define, el ETL usa `250`. En cualquier conector, `--limit N` limita
 registros durante pruebas puntuales.
 
 Cada país se ejecuta individualmente. Guatemala y Costa Rica usan `--period`
-para seleccionar la descarga histórica. Nicaragua es un flujo separado: SISCAE
+para seleccionar un mes o un rango mensual inclusivo. Nicaragua es un flujo separado: SISCAE
 solo expone el estado vigente al momento de ejecutar, por lo que el ETL etiqueta
 la corrida automáticamente con el mes actual.
 
