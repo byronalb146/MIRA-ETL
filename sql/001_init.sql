@@ -15,13 +15,6 @@ create table if not exists audit.etl_runs (
     error_message text
 );
 
-alter table audit.etl_runs add column if not exists pipeline_name text;
-alter table audit.etl_runs add column if not exists source text;
-alter table audit.etl_runs add column if not exists period text;
-alter table audit.etl_runs add column if not exists connector_version text;
-alter table audit.etl_runs add column if not exists finished_at timestamptz;
-alter table audit.etl_runs add column if not exists error_message text;
-
 create table if not exists audit.etl_row_counts (
     row_count_id bigserial primary key,
     run_id bigint not null references audit.etl_runs(id),
@@ -118,14 +111,6 @@ create table if not exists mart.procurement_process_details (
     currency_code text
 );
 
-create table if not exists mart.procurement_buyer_details (
-    process_id text primary key references mart.procurement_record_core(process_id)
-);
-
-create table if not exists mart.procurement_supplier_details (
-    process_id text primary key references mart.procurement_record_core(process_id)
-);
-
 create table if not exists mart.procurement_item_details (
     process_id text primary key references mart.procurement_record_core(process_id),
     item_description text,
@@ -186,45 +171,17 @@ create table if not exists mart.buyers (
     name_normalised text
 );
 
-alter table mart.procurement_supplier_details
-    add column if not exists supplier_id bigint references mart.suppliers(supplier_id);
+create table if not exists mart.procurement_buyer_details (
+    process_id text primary key references mart.procurement_record_core(process_id),
+    buyer_id bigint not null references mart.buyers(buyer_id)
+);
 
--- A procurement process/adjudication can be related to more than one
--- supplier. Rows without a supplier represented the old 1-to-1 placeholder
--- and are no longer needed in this relationship table.
-delete from mart.procurement_supplier_details where supplier_id is null;
-alter table mart.procurement_supplier_details
-    alter column supplier_id set not null,
-    drop constraint if exists procurement_supplier_details_pkey;
-alter table mart.procurement_supplier_details
-    add primary key (process_id, supplier_id);
-
-alter table mart.procurement_buyer_details
-    add column if not exists buyer_id bigint references mart.buyers(buyer_id);
-
--- Entity names live only in buyers/suppliers as name_normalised. Source values
--- remain available in raw and staging for auditability.
-drop view if exists mart.v_procurements_web;
-drop index if exists mart.idx_mart_supplier_details_tax_id;
-alter table mart.procurement_buyer_details
-    drop column if exists buyer_name,
-    drop column if exists buyer_id_source,
-    drop column if exists buyer_tax_id;
-alter table mart.procurement_supplier_details
-    drop column if exists supplier_name,
-    drop column if exists supplier_id_source,
-    drop column if exists supplier_tax_id,
-    drop column if exists supplier_type;
-alter table mart.buyers drop column if exists buyer_name;
-alter table mart.suppliers drop column if exists supplier_name;
-alter table mart.buyers
-    drop column if exists match_method,
-    drop column if exists first_seen_at,
-    drop column if exists last_seen_at;
-alter table mart.suppliers
-    drop column if exists match_method,
-    drop column if exists first_seen_at,
-    drop column if exists last_seen_at;
+-- A procurement process/adjudication can be related to multiple suppliers.
+create table if not exists mart.procurement_supplier_details (
+    process_id text not null references mart.procurement_record_core(process_id),
+    supplier_id bigint not null references mart.suppliers(supplier_id),
+    primary key (process_id, supplier_id)
+);
 
 create index if not exists idx_supplier_details_supplier_id
     on mart.procurement_supplier_details (supplier_id);
@@ -244,31 +201,3 @@ create table if not exists mart.web_country_stats (
     buyer_count bigint not null,
     refreshed_at timestamptz not null default now()
 );
-
-insert into mart.web_country_stats (
-    country_code, process_count, buyer_count, refreshed_at
-)
-select
-    core.country_code,
-    count(*) as process_count,
-    (select count(*) from mart.buyers b where b.country_code = core.country_code),
-    now()
-from mart.procurement_record_core core
-group by core.country_code
-on conflict (country_code) do update set
-    process_count = excluded.process_count,
-    buyer_count = excluded.buyer_count,
-    refreshed_at = excluded.refreshed_at;
-
--- Retired indexes: current ETL and web queries do not use these. Keeping the
--- drops here also removes them from databases initialized by older versions.
-drop index if exists raw.idx_raw_source_rows_payload_gin;
-drop index if exists staging.idx_staging_candidates_payload_gin;
-drop index if exists mart.idx_mart_record_core_source_record;
-drop index if exists mart.idx_mart_process_details_process_number;
-drop index if exists mart.idx_suppliers_country_tax_id;
-drop index if exists mart.idx_suppliers_country_source_id;
-drop index if exists mart.idx_suppliers_country_name_normalised;
-drop index if exists mart.idx_buyers_country_tax_id;
-drop index if exists mart.idx_buyers_country_source_id;
-drop index if exists mart.idx_buyers_country_name_normalised;

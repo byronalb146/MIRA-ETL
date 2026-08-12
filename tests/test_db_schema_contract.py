@@ -19,10 +19,18 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
             encoding="utf-8"
         )
+        body = create_table_body(sql, "mart.procurement_supplier_details")
+        self.assertIsNotNone(body)
         self.assertRegex(
-            sql,
-            r"add\s+primary\s+key\s*\(\s*process_id\s*,\s*supplier_id\s*\)",
+            body or "",
+            r"primary\s+key\s*\(\s*process_id\s*,\s*supplier_id\s*\)",
         )
+
+    def test_initial_schema_contains_no_historical_migrations(self) -> None:
+        sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotRegex(sql, r"(?im)^\s*(alter|drop|delete|update|insert)\b")
 
     def test_sql_declares_every_table_and_column_used_by_db(self) -> None:
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
