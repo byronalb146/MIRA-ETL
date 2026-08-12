@@ -576,6 +576,12 @@ function escapeHtml(s) {
   return (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+function suppliersForRecord(record) {
+  const details = record.supplier_details;
+  const relations = Array.isArray(details) ? details : (details ? [details] : []);
+  return relations.map(relation => relation?.supplier).filter(Boolean);
+}
+
 function renderRecords(records, showCountryTag) {
   const container = document.getElementById("records-container");
 
@@ -591,7 +597,8 @@ function renderRecords(records, showCountryTag) {
   container.innerHTML = records.map(r => {
     const detail = r.process_details || {};
     const buyer = r.buyer_details?.buyer || {};
-    const supplier = r.supplier_details?.supplier || {};
+    const suppliers = suppliersForRecord(r);
+    const supplierNames = suppliers.map(supplier => supplier.name_normalised).filter(Boolean);
     const item = r.item_details || {};
     const statusLabel = STATUS_LABELS[detail.process_status] || detail.source_status || "Sin estado";
     const pub = formatDate(detail.publication_date);
@@ -616,9 +623,9 @@ function renderRecords(records, showCountryTag) {
           ${detail.description && detail.description !== detail.title ? `<p class="record-description">${escapeHtml(detail.description)}</p>` : ""}
           ${item.category_source ? `<span class="record-category">${escapeHtml(item.category_source.split(";")[0])}</span>` : ""}
           ${item.item_description && item.item_description !== detail.description ? `<p class="record-description">${escapeHtml(item.item_description)}</p>` : ""}
-          ${supplier.name_normalised ? `
+          ${supplierNames.length ? `
             <div class="record-award">
-              <span>Adjudicado a ${escapeHtml(supplier.name_normalised)}</span>
+              <span>Adjudicado a ${escapeHtml(supplierNames.join(", "))}</span>
               ${awardedAmount ? `<span class="amount">· ${escapeHtml(awardedAmount)}</span>` : ""}
             </div>` : ""}
         </div>
@@ -732,7 +739,7 @@ async function main() {
     const filtered = allRecords.filter(r => {
       const detail = r.process_details || {};
       const buyer = r.buyer_details?.buyer || {};
-      const supplier = r.supplier_details?.supplier || {};
+      const suppliers = suppliersForRecord(r);
       const item = r.item_details || {};
       if (selectedCountry && r.country_code !== selectedCountry) return false;
       if (status && detail.process_status !== status) return false;
@@ -742,7 +749,7 @@ async function main() {
         detail.title,
         detail.description,
         buyer.name_normalised,
-        supplier.name_normalised,
+        ...suppliers.map(supplier => supplier.name_normalised),
         item.item_description,
         item.category_source,
       ].filter(Boolean).join(" ").toLowerCase();

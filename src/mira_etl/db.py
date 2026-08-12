@@ -134,8 +134,7 @@ BUYER_DETAIL_SQL = """
 SUPPLIER_DETAIL_SQL = """
     insert into mart.procurement_supplier_details (process_id, supplier_id)
     values (%s, %s)
-    on conflict (process_id) do update set
-        supplier_id = excluded.supplier_id
+    on conflict (process_id, supplier_id) do nothing
 """
 
 ITEM_DETAIL_SQL = """
@@ -698,16 +697,18 @@ class Database:
         self.upsert_record_core_batch(record_list)
 
         buyer_ids = self.resolve_buyer_ids(record_list)
-        supplier_ids = self.resolve_supplier_ids(record_list)
+        supplier_records = [
+            supplier_record
+            for record in record_list
+            for supplier_record in supplier_records_for(record)
+        ]
+        supplier_ids = self.resolve_supplier_ids(supplier_records)
 
         process_rows = []
         buyer_rows = []
-        supplier_rows = []
         item_rows = []
 
-        for record, buyer_id, supplier_id in zip(
-            record_list, buyer_ids, supplier_ids, strict=True
-        ):
+        for record, buyer_id in zip(record_list, buyer_ids, strict=True):
             process_id = record["process_id"]
             process_rows.append(
                 (
@@ -729,7 +730,6 @@ class Database:
 
             buyer_rows.append((process_id, buyer_id))
 
-            supplier_rows.append((process_id, supplier_id))
             item_rows.append(
                 (
                     process_id,
@@ -742,7 +742,21 @@ class Database:
         with self.conn.cursor() as cur:
             cur.executemany(PROCESS_DETAIL_SQL, process_rows)
             cur.executemany(BUYER_DETAIL_SQL, buyer_rows)
-            cur.executemany(SUPPLIER_DETAIL_SQL, supplier_rows)
+            # Replace the relationship set for the processes in this batch so
+            # a source correction cannot leave stale supplier links behind.
+            cur.executemany(
+                "delete from mart.procurement_supplier_details where process_id = %s",
+                [(record["process_id"],) for record in record_list],
+            )
+            supplier_rows = [
+                (supplier_record["process_id"], supplier_id)
+                for supplier_record, supplier_id in zip(
+                    supplier_records, supplier_ids, strict=True
+                )
+                if supplier_id is not None
+            ]
+            if supplier_rows:
+                cur.executemany(SUPPLIER_DETAIL_SQL, supplier_rows)
             cur.executemany(ITEM_DETAIL_SQL, item_rows)
 
         return len(record_list)
@@ -859,6 +873,34 @@ def ensure_sslmode(dsn: str) -> str:
         return dsn
     separator = "&" if "?" in dsn else "?"
     return f"{dsn}{separator}sslmode=require"
+
+
+def supplier_records_for(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expand a process into the supplier candidates linked to it.
+
+    New transforms provide ``suppliers`` as a list. The scalar fields remain
+    supported for sources that naturally emit one supplier per source row.
+    """
+    suppliers = record.get("suppliers")
+    if suppliers is None:
+        if not any(
+            record.get(field)
+            for field in ("supplier_tax_id", "supplier_id_source", "supplier_name")
+        ):
+            return []
+        return [record]
+
+    expanded: list[dict[str, Any]] = []
+    for supplier in suppliers:
+        if not isinstance(supplier, dict):
+            continue
+        candidate = {**record, **supplier}
+        if any(
+            candidate.get(field)
+            for field in ("supplier_tax_id", "supplier_id_source", "supplier_name")
+        ):
+            expanded.append(candidate)
+    return expanded
 
 
 def schema_mismatches(actual: dict[str, set[str]]) -> list[str]:

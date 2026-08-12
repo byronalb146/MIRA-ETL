@@ -219,6 +219,16 @@ create index if not exists idx_buyers_country_name_normalised
 alter table mart.procurement_supplier_details
     add column if not exists supplier_id bigint references mart.suppliers(supplier_id);
 
+-- A procurement process/adjudication can be related to more than one
+-- supplier. Rows without a supplier represented the old 1-to-1 placeholder
+-- and are no longer needed in this relationship table.
+delete from mart.procurement_supplier_details where supplier_id is null;
+alter table mart.procurement_supplier_details
+    alter column supplier_id set not null,
+    drop constraint if exists procurement_supplier_details_pkey;
+alter table mart.procurement_supplier_details
+    add primary key (process_id, supplier_id);
+
 alter table mart.procurement_buyer_details
     add column if not exists buyer_id bigint references mart.buyers(buyer_id);
 

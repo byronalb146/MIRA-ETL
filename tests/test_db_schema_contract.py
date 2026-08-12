@@ -15,6 +15,15 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         )
         self.assertIsNone(entity_id)
 
+    def test_supplier_relationship_has_composite_primary_key(self) -> None:
+        sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
+            encoding="utf-8"
+        )
+        self.assertRegex(
+            sql,
+            r"add\s+primary\s+key\s*\(\s*process_id\s*,\s*supplier_id\s*\)",
+        )
+
     def test_sql_declares_every_table_and_column_used_by_db(self) -> None:
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
             encoding="utf-8"

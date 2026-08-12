@@ -41,7 +41,8 @@ def build_record(
     award = awards[0] if awards else {}
     contract = contracts[0] if contracts else {}
     buyer = compiled.get("buyer") or tender.get("procuringEntity") or {}
-    supplier = first_supplier(award, contract)
+    supplier_parties = all_suppliers(awards, contracts)
+    supplier = supplier_parties[0] if supplier_parties else {}
     item = first_item(award, contract, tender)
     source_record_id = (
         source_row.get("ocid")
@@ -51,10 +52,19 @@ def build_record(
     if not source_record_id:
         raise ValueError("Guatemala OCDS record is missing ocid/id")
 
-    supplier_party = party_by_id(
-        compiled.get("parties") or [],
-        supplier.get("id"),
-    )
+    parties = compiled.get("parties") or []
+    supplier_party = party_by_id(parties, supplier.get("id"))
+    suppliers = [
+        {
+            "supplier_name": item.get("name"),
+            "supplier_id_source": item.get("id"),
+            "supplier_tax_id": identifier_value(item),
+            "supplier_type": normalise_supplier_type(
+                party_by_id(parties, item.get("id"))
+            ),
+        }
+        for item in supplier_parties
+    ]
     estimated_value = tender.get("value") or {}
     awarded_value = contract.get("value") or award.get("value") or {}
     source_url = first_release_url(source_row) or config.source_url_for_period(period)
@@ -109,6 +119,7 @@ def build_record(
         "supplier_id_source": supplier.get("id"),
         "supplier_tax_id": identifier_value(supplier),
         "supplier_type": normalise_supplier_type(supplier_party),
+        "suppliers": suppliers,
         "item_description": item.get("description"),
         "category_source": (item.get("classification") or {}).get("id"),
         "category_normalised": None,
@@ -137,12 +148,24 @@ def build_record(
     return record
 
 
-def first_supplier(
-    award: dict[str, Any],
-    contract: dict[str, Any],
-) -> dict[str, Any]:
-    suppliers = award.get("suppliers") or contract.get("suppliers") or []
-    return suppliers[0] if suppliers else {}
+def all_suppliers(
+    awards: list[dict[str, Any]],
+    contracts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return every distinct supplier referenced by awards or contracts."""
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str | None, str | None, str | None]] = set()
+    for section in [*awards, *contracts]:
+        for supplier in section.get("suppliers") or []:
+            key = (
+                supplier.get("id"),
+                identifier_value(supplier),
+                supplier.get("name"),
+            )
+            if key not in seen:
+                seen.add(key)
+                result.append(supplier)
+    return result
 
 
 def first_item(*sections: dict[str, Any]) -> dict[str, Any]:
