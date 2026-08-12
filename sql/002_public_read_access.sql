@@ -8,6 +8,7 @@ alter table mart.procurement_supplier_details enable row level security;
 alter table mart.procurement_item_details enable row level security;
 alter table mart.suppliers enable row level security;
 alter table mart.buyers enable row level security;
+alter table mart.web_country_stats enable row level security;
 
 grant usage on schema mart to anon, authenticated;
 grant select on
@@ -17,7 +18,8 @@ grant select on
     mart.procurement_supplier_details,
     mart.procurement_item_details,
     mart.suppliers,
-    mart.buyers
+    mart.buyers,
+    mart.web_country_stats
 to anon, authenticated;
 
 drop policy if exists "Public read access" on mart.procurement_record_core;
@@ -40,6 +42,9 @@ create policy "Public read access" on mart.suppliers
     for select to anon, authenticated using (true);
 drop policy if exists "Public read access" on mart.buyers;
 create policy "Public read access" on mart.buyers
+    for select to anon, authenticated using (true);
+drop policy if exists "Public read access" on mart.web_country_stats;
+create policy "Public read access" on mart.web_country_stats
     for select to anon, authenticated using (true);
 
 -- No write policies are granted to anon or authenticated.

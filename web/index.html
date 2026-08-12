@@ -816,16 +816,9 @@ async function mainPaginated() {
     db: { schema: "mart" },
   });
 
-  async function countRows(table, filters = []) {
-    let query = supabase.from(table).select("*", { count: "exact", head: true });
-    filters.forEach(([column, value]) => { query = query.eq(column, value); });
-    return query;
-  }
-
-  const countryCountResults = await Promise.all(
-    COUNTRY_ORDER.map(c => countRows("procurement_record_core", [["country_code", c.code]]))
-  );
-  const countryError = countryCountResults.find(r => r.error)?.error;
+  const { data: statsRows, error: countryError } = await supabase
+    .from("web_country_stats")
+    .select("country_code, process_count, buyer_count, refreshed_at");
   if (countryError) {
     document.getElementById("records-container").innerHTML = `
       <div class="state-block">
@@ -836,15 +829,11 @@ async function mainPaginated() {
   }
 
   countryTotals = Object.fromEntries(
-    COUNTRY_ORDER.map((c, index) => [c.code, countryCountResults[index].count || 0])
+    (statsRows || []).map(row => [row.country_code, Number(row.process_count) || 0])
   );
   liveCountries = new Set(Object.entries(countryTotals).filter(([, total]) => total > 0).map(([code]) => code));
-
-  const buyerCountResults = await Promise.all(
-    COUNTRY_ORDER.map(c => countRows("buyers", [["country_code", c.code]]))
-  );
   buyerTotals = Object.fromEntries(
-    COUNTRY_ORDER.map((c, index) => [c.code, buyerCountResults[index].count || 0])
+    (statsRows || []).map(row => [row.country_code, Number(row.buyer_count) || 0])
   );
 
   document.getElementById("stat-countries").innerHTML = `${liveCountries.size}<span style="font-size:1.4rem;">/6</span>`;
@@ -876,7 +865,7 @@ async function mainPaginated() {
     const pattern = searchPattern();
     let query = supabase
       .from("procurement_record_core")
-      .select(selectColumns, { count: "exact" });
+      .select(selectColumns);
     if (selectedCountry) query = query.eq("country_code", selectedCountry);
     if (status) query = query.eq("process_details.process_status", status);
     if (pattern) {
@@ -901,10 +890,9 @@ async function mainPaginated() {
     });
   }
 
-  function renderPagination(recordsShown) {
+  function renderPagination(recordsShown, hasNextPage) {
     const pagination = document.getElementById("pagination");
-    const totalPages = Math.max(1, Math.ceil(currentTotal / PAGE_SIZE));
-    if (currentTotal === 0) {
+    if (recordsShown === 0 && currentPage === 1) {
       pagination.hidden = true;
       return;
     }
@@ -912,10 +900,10 @@ async function mainPaginated() {
     const to = from + recordsShown - 1;
     pagination.hidden = false;
     document.getElementById("pagination-summary").textContent =
-      `Mostrando ${from.toLocaleString("es-GT")}-${to.toLocaleString("es-GT")} de ${currentTotal.toLocaleString("es-GT")} procesos`;
-    document.getElementById("pagination-page").textContent = `${currentPage} / ${totalPages}`;
+      `Mostrando procesos ${from.toLocaleString("es-GT")}-${to.toLocaleString("es-GT")}`;
+    document.getElementById("pagination-page").textContent = `Pagina ${currentPage}`;
     document.getElementById("prev-page").disabled = currentPage <= 1;
-    document.getElementById("next-page").disabled = currentPage >= totalPages;
+    document.getElementById("next-page").disabled = !hasNextPage;
   }
 
   function renderNote() {
@@ -931,7 +919,7 @@ async function mainPaginated() {
     const totalsText = visibleTotals
       .map(([code, total]) => `${code}: ${total.toLocaleString("es-GT")}`)
       .join(" · ");
-    if (totalsText) noteParts.push(`Total en core por pais: ${totalsText}.`);
+    if (totalsText) noteParts.push(`Total exacto en core por pais: ${totalsText}.`);
     if (noteParts.length > 0) {
       note.style.display = "block";
       note.innerHTML = noteParts.join(" · ");
@@ -960,9 +948,9 @@ async function mainPaginated() {
       </div>`;
 
     const from = (currentPage - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-    const { data, error, count } = await buildQuery()
-      .order("extracted_at", { ascending: false })
+    const to = from + PAGE_SIZE;
+    const { data, error } = await buildQuery()
+      .order("process_id", { ascending: true })
       .range(from, to);
 
     if (error) {
@@ -975,24 +963,26 @@ async function mainPaginated() {
       return;
     }
 
-    const records = data || [];
-    currentTotal = count || 0;
-    const totalPages = Math.max(1, Math.ceil(currentTotal / PAGE_SIZE));
-    if (currentPage > totalPages) {
-      currentPage = totalPages;
-      await loadPage();
-      return;
-    }
+    const rows = data || [];
+    const hasNextPage = rows.length > PAGE_SIZE;
+    const records = rows.slice(0, PAGE_SIZE);
 
-    document.getElementById("stat-total").textContent = currentTotal.toLocaleString("es-GT");
-    document.getElementById("stat-institutions").textContent =
-      totalBuyersForCurrentCountry().toLocaleString("es-GT");
+    const hasActiveFilters = Boolean(statusFilter.value || searchPattern());
+    const totalProcesses = selectedCountry
+      ? countryTotals[selectedCountry] || 0
+      : Object.values(countryTotals).reduce((sum, value) => sum + value, 0);
+    document.getElementById("stat-total").textContent = hasActiveFilters
+      ? records.length.toLocaleString("es-GT")
+      : totalProcesses.toLocaleString("es-GT");
+    document.getElementById("stat-institutions").textContent = hasActiveFilters
+      ? new Set(records.map(r => r.buyer_details?.buyer?.name_normalised).filter(Boolean)).size.toLocaleString("es-GT")
+      : totalBuyersForCurrentCountry().toLocaleString("es-GT");
     document.getElementById("footer-updated").textContent =
       `${records.length} procesos en pantalla · actualizado ${new Date().toLocaleString("es-GT")}`;
 
     renderNote();
     renderRecords(records, !selectedCountry && liveCountries.size > 1);
-    renderPagination(records.length);
+    renderPagination(records.length, hasNextPage);
   }
 
   repaintIsthmus();
@@ -1014,8 +1004,7 @@ async function mainPaginated() {
     loadPage();
   });
   document.getElementById("next-page").addEventListener("click", () => {
-    const totalPages = Math.max(1, Math.ceil(currentTotal / PAGE_SIZE));
-    if (currentPage >= totalPages) return;
+    if (document.getElementById("next-page").disabled) return;
     currentPage += 1;
     loadPage();
   });

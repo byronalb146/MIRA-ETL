@@ -70,6 +70,9 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
         "buyer_id", "country_code", "source_system", "buyer_tax_id",
         "buyer_id_source", "name_normalised",
     },
+    "mart.web_country_stats": {
+        "country_code", "process_count", "buyer_count", "refreshed_at",
+    },
 }
 
 
@@ -258,6 +261,27 @@ class Database:
              where id = %s
             """,
             (status, error_message, run_id),
+        )
+
+    def refresh_web_country_stats(self, country_code: str) -> None:
+        """Refresh exact public counts for one country after its mart load."""
+        self.execute(
+            """
+            insert into mart.web_country_stats (
+                country_code, process_count, buyer_count, refreshed_at
+            )
+            values (
+                %s,
+                (select count(*) from mart.procurement_record_core where country_code = %s),
+                (select count(*) from mart.buyers where country_code = %s),
+                now()
+            )
+            on conflict (country_code) do update set
+                process_count = excluded.process_count,
+                buyer_count = excluded.buyer_count,
+                refreshed_at = excluded.refreshed_at
+            """,
+            (country_code, country_code, country_code),
         )
 
     def finish_run_after_error(

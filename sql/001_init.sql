@@ -159,6 +159,12 @@ create table if not exists audit.validation_results (
 create index if not exists idx_mart_record_core_source_record
     on mart.procurement_record_core (source_system, source_record_id);
 
+create index if not exists idx_mart_record_core_country
+    on mart.procurement_record_core (country_code);
+
+create index if not exists idx_mart_record_core_country_process
+    on mart.procurement_record_core (country_code, process_id);
+
 create index if not exists idx_mart_process_details_process_number
     on mart.procurement_process_details (process_number);
 
@@ -261,3 +267,31 @@ create index if not exists idx_supplier_details_supplier_id
 
 create index if not exists idx_buyer_details_buyer_id
     on mart.procurement_buyer_details (buyer_id);
+
+create index if not exists idx_buyers_country
+    on mart.buyers (country_code);
+
+-- Small, exact summary consumed by the public website. It is refreshed by
+-- the ETL after every successful country load, so browsers never COUNT the
+-- large mart tables directly.
+create table if not exists mart.web_country_stats (
+    country_code text primary key,
+    process_count bigint not null,
+    buyer_count bigint not null,
+    refreshed_at timestamptz not null default now()
+);
+
+insert into mart.web_country_stats (
+    country_code, process_count, buyer_count, refreshed_at
+)
+select
+    core.country_code,
+    count(*) as process_count,
+    (select count(*) from mart.buyers b where b.country_code = core.country_code),
+    now()
+from mart.procurement_record_core core
+group by core.country_code
+on conflict (country_code) do update set
+    process_count = excluded.process_count,
+    buyer_count = excluded.buyer_count,
+    refreshed_at = excluded.refreshed_at;
