@@ -1,14 +1,15 @@
 # Resolucion de entidades: proveedores y compradores
 
-`mart.procurement_buyer_details` es una relacion 1-a-1 con cada proceso.
-`mart.procurement_supplier_details` es una relacion 1-a-muchos: su llave
-primaria es (`process_id`, `supplier_id`), por lo que una adjudicacion puede
-estar vinculada con varios proveedores. Las tablas de relacion no repiten
+`mart.procurement_buyer_details` y `mart.procurement_supplier_details` son
+relaciones 1-a-muchos. Sus llaves primarias son (`process_id`, `buyer_id`) y
+(`process_id`, `supplier_id`), por lo que una adjudicacion puede estar
+vinculada con varios compradores y proveedores. Las tablas no repiten
 nombre, identificador fiscal ni identificador fuente.
 
 `sql/001_init.sql` incluye dos tablas de dimension
 (`mart.suppliers`, `mart.buyers`) con un ID propio. Las tablas de detalle
-referencian esos IDs; puede haber varias filas de proveedor para un proceso.
+referencian esos IDs; puede haber varias filas de comprador o proveedor para
+un proceso.
 El nombre existe una sola vez en `name_normalised`. La grafia original queda
 en RAW y staging para auditoria.
 

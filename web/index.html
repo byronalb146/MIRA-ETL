@@ -582,6 +582,12 @@ function suppliersForRecord(record) {
   return relations.map(relation => relation?.supplier).filter(Boolean);
 }
 
+function buyersForRecord(record) {
+  const details = record.buyer_details;
+  const relations = Array.isArray(details) ? details : (details ? [details] : []);
+  return relations.map(relation => relation?.buyer).filter(Boolean);
+}
+
 function renderRecords(records, showCountryTag) {
   const container = document.getElementById("records-container");
 
@@ -596,7 +602,8 @@ function renderRecords(records, showCountryTag) {
 
   container.innerHTML = records.map(r => {
     const detail = r.process_details || {};
-    const buyer = r.buyer_details?.buyer || {};
+    const buyers = buyersForRecord(r);
+    const buyerNames = buyers.map(buyer => buyer.name_normalised).filter(Boolean);
     const suppliers = suppliersForRecord(r);
     const supplierNames = suppliers.map(supplier => supplier.name_normalised).filter(Boolean);
     const item = r.item_details || {};
@@ -614,8 +621,8 @@ function renderRecords(records, showCountryTag) {
           </div>
           <h3 class="record-title">${escapeHtml(detail.title || detail.description || "Proceso sin título")}</h3>
           <div class="record-meta">
-            ${buyer.name_normalised ? `<span>${escapeHtml(buyer.name_normalised)}</span>` : ""}
-            ${buyer.name_normalised && (pub || close) ? `<span class="dot">·</span>` : ""}
+            ${buyerNames.length ? `<span>${escapeHtml(buyerNames.join(", "))}</span>` : ""}
+            ${buyerNames.length && (pub || close) ? `<span class="dot">·</span>` : ""}
             ${pub ? `<span>Publicado ${pub}</span>` : ""}
             ${pub && close ? `<span class="dot">·</span>` : ""}
             ${close ? `<span>Cierra ${close}</span>` : ""}
@@ -738,7 +745,7 @@ async function main() {
     const status = statusFilter.value;
     const filtered = allRecords.filter(r => {
       const detail = r.process_details || {};
-      const buyer = r.buyer_details?.buyer || {};
+      const buyers = buyersForRecord(r);
       const suppliers = suppliersForRecord(r);
       const item = r.item_details || {};
       if (selectedCountry && r.country_code !== selectedCountry) return false;
@@ -748,7 +755,7 @@ async function main() {
         detail.process_number,
         detail.title,
         detail.description,
-        buyer.name_normalised,
+        ...buyers.map(buyer => buyer.name_normalised),
         ...suppliers.map(supplier => supplier.name_normalised),
         item.item_description,
         item.category_source,
@@ -758,7 +765,7 @@ async function main() {
 
     document.getElementById("stat-total").textContent = filtered.length;
     document.getElementById("stat-institutions").textContent =
-      new Set(filtered.map(r => r.buyer_details?.buyer?.name_normalised).filter(Boolean)).size;
+      new Set(filtered.flatMap(r => buyersForRecord(r).map(buyer => buyer.name_normalised)).filter(Boolean)).size;
 
     const note = document.getElementById("country-filter-note");
     const noteParts = [];
@@ -975,7 +982,7 @@ async function mainPaginated() {
       ? records.length.toLocaleString("es-GT")
       : totalProcesses.toLocaleString("es-GT");
     document.getElementById("stat-institutions").textContent = hasActiveFilters
-      ? new Set(records.map(r => r.buyer_details?.buyer?.name_normalised).filter(Boolean)).size.toLocaleString("es-GT")
+      ? new Set(records.flatMap(r => buyersForRecord(r).map(buyer => buyer.name_normalised)).filter(Boolean)).size.toLocaleString("es-GT")
       : totalBuyersForCurrentCountry().toLocaleString("es-GT");
     document.getElementById("footer-updated").textContent =
       `${records.length} procesos en pantalla · actualizado ${new Date().toLocaleString("es-GT")}`;

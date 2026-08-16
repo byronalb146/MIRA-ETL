@@ -26,6 +26,17 @@ class DatabaseSchemaContractTest(unittest.TestCase):
             r"primary\s+key\s*\(\s*process_id\s*,\s*supplier_id\s*\)",
         )
 
+    def test_buyer_relationship_has_composite_primary_key(self) -> None:
+        sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
+            encoding="utf-8"
+        )
+        body = create_table_body(sql, "mart.procurement_buyer_details")
+        self.assertIsNotNone(body)
+        self.assertRegex(
+            body or "",
+            r"primary\s+key\s*\(\s*process_id\s*,\s*buyer_id\s*\)",
+        )
+
     def test_initial_schema_contains_no_historical_migrations(self) -> None:
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
             encoding="utf-8"

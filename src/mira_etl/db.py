@@ -130,8 +130,7 @@ PROCESS_DETAIL_SQL = """
 BUYER_DETAIL_SQL = """
     insert into mart.procurement_buyer_details (process_id, buyer_id)
     values (%s, %s)
-    on conflict (process_id) do update set
-        buyer_id = excluded.buyer_id
+    on conflict (process_id, buyer_id) do nothing
 """
 
 SUPPLIER_DETAIL_SQL = """
@@ -720,7 +719,12 @@ class Database:
 
         self.upsert_record_core_batch(record_list)
 
-        buyer_ids = self.resolve_buyer_ids(record_list)
+        buyer_records = [
+            buyer_record
+            for record in record_list
+            for buyer_record in buyer_records_for(record)
+        ]
+        buyer_ids = self.resolve_buyer_ids(buyer_records)
         supplier_records = [
             supplier_record
             for record in record_list
@@ -729,10 +733,9 @@ class Database:
         supplier_ids = self.resolve_supplier_ids(supplier_records)
 
         process_rows = []
-        buyer_rows = []
         item_rows = []
 
-        for record, buyer_id in zip(record_list, buyer_ids, strict=True):
+        for record in record_list:
             process_id = record["process_id"]
             process_rows.append(
                 (
@@ -752,8 +755,6 @@ class Database:
                 )
             )
 
-            buyer_rows.append((process_id, buyer_id))
-
             item_rows.append(
                 (
                     process_id,
@@ -765,7 +766,19 @@ class Database:
 
         with self.conn.cursor() as cur:
             cur.executemany(PROCESS_DETAIL_SQL, process_rows)
-            cur.executemany(BUYER_DETAIL_SQL, buyer_rows)
+            cur.executemany(
+                "delete from mart.procurement_buyer_details where process_id = %s",
+                [(record["process_id"],) for record in record_list],
+            )
+            buyer_rows = [
+                (buyer_record["process_id"], buyer_id)
+                for buyer_record, buyer_id in zip(
+                    buyer_records, buyer_ids, strict=True
+                )
+                if buyer_id is not None
+            ]
+            if buyer_rows:
+                cur.executemany(BUYER_DETAIL_SQL, buyer_rows)
             # Replace the relationship set for the processes in this batch so
             # a source correction cannot leave stale supplier links behind.
             cur.executemany(
@@ -922,6 +935,34 @@ def supplier_records_for(record: dict[str, Any]) -> list[dict[str, Any]]:
         if any(
             candidate.get(field)
             for field in ("supplier_tax_id", "supplier_id_source", "supplier_name")
+        ):
+            expanded.append(candidate)
+    return expanded
+
+
+def buyer_records_for(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expand a process into all buyer candidates linked to it.
+
+    The scalar buyer fields remain supported for connectors that expose only
+    one buyer. New or richer connectors can provide ``buyers`` as a list.
+    """
+    buyers = record.get("buyers")
+    if buyers is None:
+        if not any(
+            record.get(field)
+            for field in ("buyer_tax_id", "buyer_id_source", "buyer_name")
+        ):
+            return []
+        return [record]
+
+    expanded: list[dict[str, Any]] = []
+    for buyer in buyers:
+        if not isinstance(buyer, dict):
+            continue
+        candidate = {**record, **buyer}
+        if any(
+            candidate.get(field)
+            for field in ("buyer_tax_id", "buyer_id_source", "buyer_name")
         ):
             expanded.append(candidate)
     return expanded

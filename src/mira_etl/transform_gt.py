@@ -40,7 +40,8 @@ def build_record(
     contracts = compiled.get("contracts") or []
     award = awards[0] if awards else {}
     contract = contracts[0] if contracts else {}
-    buyer = compiled.get("buyer") or tender.get("procuringEntity") or {}
+    buyer_parties = all_buyers(compiled, tender)
+    buyer = buyer_parties[0] if buyer_parties else {}
     supplier_parties = all_suppliers(awards, contracts)
     supplier = supplier_parties[0] if supplier_parties else {}
     item = first_item(award, contract, tender)
@@ -82,6 +83,14 @@ def build_record(
         "buyer_name": buyer.get("name"),
         "buyer_id_source": buyer.get("id"),
         "buyer_tax_id": identifier_value(buyer),
+        "buyers": [
+            {
+                "buyer_name": item.get("name"),
+                "buyer_id_source": item.get("id"),
+                "buyer_tax_id": identifier_value(item),
+            }
+            for item in buyer_parties
+        ],
         "procurement_method": (
             tender.get("procurementMethodDetails")
             or tender.get("procurementMethod")
@@ -165,6 +174,30 @@ def all_suppliers(
             if key not in seen:
                 seen.add(key)
                 result.append(supplier)
+    return result
+
+
+def all_buyers(
+    compiled: dict[str, Any],
+    tender: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Return every distinct buyer/procuring entity exposed by OCDS."""
+    candidates = [compiled.get("buyer"), tender.get("procuringEntity")]
+    candidates.extend(
+        party
+        for party in compiled.get("parties") or []
+        if {str(role).lower() for role in party.get("roles") or []}
+        & {"buyer", "procuringentity"}
+    )
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str | None, str | None, str | None]] = set()
+    for buyer in candidates:
+        if not isinstance(buyer, dict):
+            continue
+        key = (buyer.get("id"), identifier_value(buyer), buyer.get("name"))
+        if key not in seen:
+            seen.add(key)
+            result.append(buyer)
     return result
 
 

@@ -171,9 +171,11 @@ create table if not exists mart.buyers (
     name_normalised text
 );
 
+-- A procurement process/adjudication can be related to multiple buyers.
 create table if not exists mart.procurement_buyer_details (
-    process_id text primary key references mart.procurement_record_core(process_id),
-    buyer_id bigint not null references mart.buyers(buyer_id)
+    process_id text not null references mart.procurement_record_core(process_id),
+    buyer_id bigint not null references mart.buyers(buyer_id),
+    primary key (process_id, buyer_id)
 );
 
 -- A procurement process/adjudication can be related to multiple suppliers.
