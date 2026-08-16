@@ -44,12 +44,15 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         self.assertNotRegex(sql, r"(?im)^\s*(alter|drop|delete|update|insert)\b")
 
     def test_sql_declares_every_table_and_column_used_by_db(self) -> None:
-        sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
-            encoding="utf-8"
-        )
+        # New columns land in their own numbered migration file (see
+        # sql/003_display_name.sql, sql/005_grain.sql) rather than editing
+        # 001_init.sql, which test_initial_schema_contains_no_historical_migrations
+        # keeps CREATE-only. So the contract check reads every sql/*.sql file,
+        # not just the first one.
+        sql = all_sql_text()
         for table, columns in SCHEMA_CONTRACT.items():
             body = create_table_body(sql, table)
-            self.assertIsNotNone(body, f"{table} is not created by 001_init.sql")
+            self.assertIsNotNone(body, f"{table} is not created by any sql/*.sql file")
             for column in columns:
                 declared_in_create = re.search(rf"\b{re.escape(column)}\b", body or "")
                 declared_by_alter = re.search(
@@ -60,7 +63,7 @@ class DatabaseSchemaContractTest(unittest.TestCase):
                 )
                 self.assertTrue(
                     declared_in_create or declared_by_alter,
-                    f"{table}.{column} is used by db.py but absent from 001_init.sql",
+                    f"{table}.{column} is used by db.py but absent from sql/*.sql",
                 )
 
     def test_accepts_the_declared_schema(self) -> None:
@@ -87,6 +90,13 @@ class DatabaseSchemaContractTest(unittest.TestCase):
             schema_mismatches(actual),
             ["mart.procurement_buyer_details has unexpected columns buyer_name"],
         )
+
+
+def all_sql_text() -> str:
+    sql_dir = Path(__file__).parents[1] / "sql"
+    return "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(sql_dir.glob("*.sql"))
+    )
 
 
 def create_table_body(sql: str, table: str) -> str | None:

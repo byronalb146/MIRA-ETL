@@ -36,6 +36,11 @@ def main() -> None:
     )
 
     subparsers.add_parser("init-db", help="Create database schemas and tables.")
+    subparsers.add_parser(
+        "backfill-display-names",
+        help="Fill display_name on mart.buyers/mart.suppliers rows created "
+        "before that column existed, from already-loaded staging data.",
+    )
 
     args = parser.parse_args()
 
@@ -45,6 +50,16 @@ def main() -> None:
                 db.execute_sql_file(sql_file)
             db.validate_schema()
         print("Database schema initialized and validated.")
+        return
+
+    if args.command == "backfill-display-names":
+        with Database.from_env() as db:
+            db.validate_schema()
+            updated = db.backfill_display_names_from_staging()
+        print(
+            f"display_name backfilled: {updated['buyers']:,} buyers, "
+            f"{updated['suppliers']:,} suppliers."
+        )
         return
 
     if args.command == "run":

@@ -45,7 +45,7 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
         "source_url", "extracted_at", "source_last_modified_at",
         "connector_version", "raw_payload", "raw_payload_hash",
         "normalisation_status", "normalised_at", "data_quality_status",
-        "missing_fields",
+        "missing_fields", "grain",
     },
     "mart.procurement_process_details": {
         "process_id", "process_number", "title", "description",
@@ -64,11 +64,11 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
     },
     "mart.suppliers": {
         "supplier_id", "country_code", "source_system", "supplier_tax_id",
-        "supplier_id_source", "name_normalised", "supplier_type",
+        "supplier_id_source", "name_normalised", "display_name", "supplier_type",
     },
     "mart.buyers": {
         "buyer_id", "country_code", "source_system", "buyer_tax_id",
-        "buyer_id_source", "name_normalised",
+        "buyer_id_source", "name_normalised", "display_name",
     },
     "mart.web_country_stats": {
         "country_code", "process_count", "buyer_count", "refreshed_at",
@@ -81,13 +81,13 @@ CORE_SQL = """
         process_id, country_code, source_system, source_record_id, source_url,
         extracted_at, source_last_modified_at, connector_version,
         raw_payload, raw_payload_hash, normalisation_status, normalised_at,
-        data_quality_status, missing_fields
+        data_quality_status, missing_fields, grain
     )
     values (
         %(process_id)s, %(country_code)s, %(source_system)s, %(source_record_id)s, %(source_url)s,
         %(extracted_at)s, %(source_last_modified_at)s, %(connector_version)s,
         %(raw_payload)s::jsonb, %(raw_payload_hash)s, %(normalisation_status)s, %(normalised_at)s,
-        %(data_quality_status)s, %(missing_fields)s::jsonb
+        %(data_quality_status)s, %(missing_fields)s::jsonb, %(grain)s
     )
     on conflict (process_id)
     do update set
@@ -102,7 +102,8 @@ CORE_SQL = """
         normalisation_status = excluded.normalisation_status,
         normalised_at = excluded.normalised_at,
         data_quality_status = excluded.data_quality_status,
-        missing_fields = excluded.missing_fields
+        missing_fields = excluded.missing_fields,
+        grain = excluded.grain
 """
 
 PROCESS_DETAIL_SQL = """
@@ -801,26 +802,31 @@ class Database:
     def resolve_buyer_ids(self, records: list[dict[str, Any]]) -> list[int | None]:
         rows = self.fetch_all("select * from mart.buyers")
         tax, source, name = entity_indexes(rows, "buyer")
+        existing_display = {int(row["buyer_id"]): row.get("display_name") for row in rows}
         pending: list[tuple[Any, ...]] = []
         markers: list[int | None] = []
+        display_updates: dict[int, str] = {}
 
         for record in records:
             country = record["country_code"]
             source_system = record["source_system"]
             tax_id = record.get("buyer_tax_id")
             source_id = record.get("buyer_id_source")
-            normalised = normalise_name(record.get("buyer_name"))
+            raw_name = record.get("buyer_name")
+            normalised = normalise_name(raw_name)
             entity_id = first_entity_id(
                 country, source_system, tax_id, source_id, normalised,
                 tax, source, name,
             )
             if entity_id is None and (tax_id or source_id or normalised):
                 entity_id = -(len(pending) + 1)
-                pending.append((country, source_system, tax_id, source_id, normalised))
+                pending.append((country, source_system, tax_id, source_id, normalised, raw_name))
                 index_entity(
                     entity_id, country, source_system, tax_id, source_id,
                     normalised, tax, source, name,
                 )
+            elif entity_id and entity_id > 0 and raw_name and not existing_display.get(entity_id):
+                display_updates.setdefault(entity_id, raw_name)
             markers.append(entity_id)
 
         if pending:
@@ -828,13 +834,13 @@ class Database:
                 cur.executemany(
                     """insert into mart.buyers
                        (country_code, source_system, buyer_tax_id,
-                        buyer_id_source, name_normalised)
-                       values (%s, %s, %s, %s, %s)""",
+                        buyer_id_source, name_normalised, display_name)
+                       values (%s, %s, %s, %s, %s, %s)""",
                     pending,
                 )
             rows = self.fetch_all("select * from mart.buyers")
             tax, source, name = entity_indexes(rows, "buyer")
-            return [
+            markers = [
                 first_entity_id(
                     record["country_code"], record["source_system"],
                     record.get("buyer_tax_id"), record.get("buyer_id_source"),
@@ -842,20 +848,29 @@ class Database:
                 )
                 for record in records
             ]
+
+        if display_updates:
+            self._fill_display_names("mart.buyers", "buyer_id", display_updates)
+
         return markers
 
     def resolve_supplier_ids(self, records: list[dict[str, Any]]) -> list[int | None]:
         rows = self.fetch_all("select * from mart.suppliers")
         tax, source, name = entity_indexes(rows, "supplier")
+        existing_display = {
+            int(row["supplier_id"]): row.get("display_name") for row in rows
+        }
         pending: list[tuple[Any, ...]] = []
         markers: list[int | None] = []
+        display_updates: dict[int, str] = {}
 
         for record in records:
             country = record["country_code"]
             source_system = record["source_system"]
             tax_id = record.get("supplier_tax_id")
             source_id = record.get("supplier_id_source")
-            normalised = normalise_name(record.get("supplier_name"))
+            raw_name = record.get("supplier_name")
+            normalised = normalise_name(raw_name)
             entity_id = first_entity_id(
                 country, source_system, tax_id, source_id, normalised,
                 tax, source, name,
@@ -864,12 +879,14 @@ class Database:
                 entity_id = -(len(pending) + 1)
                 pending.append(
                     (country, source_system, tax_id, source_id, normalised,
-                     record.get("supplier_type"))
+                     record.get("supplier_type"), raw_name)
                 )
                 index_entity(
                     entity_id, country, source_system, tax_id, source_id,
                     normalised, tax, source, name,
                 )
+            elif entity_id and entity_id > 0 and raw_name and not existing_display.get(entity_id):
+                display_updates.setdefault(entity_id, raw_name)
             markers.append(entity_id)
 
         if pending:
@@ -877,13 +894,13 @@ class Database:
                 cur.executemany(
                     """insert into mart.suppliers
                        (country_code, source_system, supplier_tax_id,
-                        supplier_id_source, name_normalised, supplier_type)
-                       values (%s, %s, %s, %s, %s, %s)""",
+                        supplier_id_source, name_normalised, supplier_type, display_name)
+                       values (%s, %s, %s, %s, %s, %s, %s)""",
                     pending,
                 )
             rows = self.fetch_all("select * from mart.suppliers")
             tax, source, name = entity_indexes(rows, "supplier")
-            return [
+            markers = [
                 first_entity_id(
                     record["country_code"], record["source_system"],
                     record.get("supplier_tax_id"), record.get("supplier_id_source"),
@@ -891,7 +908,24 @@ class Database:
                 )
                 for record in records
             ]
+
+        if display_updates:
+            self._fill_display_names("mart.suppliers", "supplier_id", display_updates)
+
         return markers
+
+    def _fill_display_names(
+        self, table: str, id_column: str, display_updates: dict[int, str],
+    ) -> None:
+        """Backfills display_name for entities matched to an existing row that
+        does not have one yet. Never overwrites a display_name already set."""
+        with self.conn.cursor() as cur:
+            cur.executemany(
+                f"""update {table}
+                       set display_name = coalesce(display_name, %s)
+                     where {id_column} = %s""",
+                [(display_name, entity_id) for entity_id, display_name in display_updates.items()],
+            )
 
     def upsert_record_core_batch(self, records: list[dict[str, Any]]) -> None:
         rows = [
@@ -904,6 +938,89 @@ class Database:
         ]
         with self.conn.cursor() as cur:
             cur.executemany(CORE_SQL, rows)
+
+    def backfill_display_names_from_staging(self, batch_size: int = 2000) -> dict[str, int]:
+        """Fills display_name for buyer/supplier rows created before that column
+        existed, by replaying the already-loaded staging.normalized_candidates
+        payloads through the same entity-matching indexes used at load time.
+
+        Reads from staging rather than mart.procurement_record_core.raw_payload
+        so it never re-derives buyer_name/supplier_name from raw source JSON --
+        that extraction already happened once per connector, and staging is
+        where its result was recorded (see pipeline.load_records)."""
+        updated = {"buyers": 0, "suppliers": 0}
+        last_id = 0
+        while True:
+            rows = self.fetch_all(
+                """select candidate_id, payload from staging.normalized_candidates
+                    where candidate_id > %s
+                    order by candidate_id
+                    limit %s""",
+                (last_id, batch_size),
+            )
+            if not rows:
+                break
+            last_id = rows[-1]["candidate_id"]
+            records = [row["payload"] for row in rows]
+
+            buyer_records = [
+                buyer_record
+                for record in records
+                for buyer_record in buyer_records_for(record)
+            ]
+            if buyer_records:
+                updated["buyers"] += self._backfill_display_names(
+                    buyer_records, "mart.buyers", "buyer_id", "buyer"
+                )
+
+            supplier_records = [
+                supplier_record
+                for record in records
+                for supplier_record in supplier_records_for(record)
+            ]
+            if supplier_records:
+                updated["suppliers"] += self._backfill_display_names(
+                    supplier_records, "mart.suppliers", "supplier_id", "supplier"
+                )
+
+        return updated
+
+    def _backfill_display_names(
+        self,
+        records: list[dict[str, Any]],
+        table: str,
+        id_column: str,
+        prefix: str,
+    ) -> int:
+        rows = self.fetch_all(f"select * from {table}")
+        tax, source, name = entity_indexes(rows, prefix)
+        existing_display = {int(row[id_column]): row.get("display_name") for row in rows}
+        display_updates: dict[int, str] = {}
+
+        tax_field = f"{prefix}_tax_id"
+        source_field = f"{prefix}_id_source"
+        name_field = f"{prefix}_name"
+
+        for record in records:
+            country = record.get("country_code")
+            source_system = record.get("source_system")
+            if not country or not source_system:
+                continue
+            tax_id = record.get(tax_field)
+            source_id = record.get(source_field)
+            raw_name = record.get(name_field)
+            normalised = normalise_name(raw_name)
+            entity_id = first_entity_id(
+                country, source_system, tax_id, source_id, normalised,
+                tax, source, name,
+            )
+            if entity_id and raw_name and not existing_display.get(entity_id):
+                display_updates.setdefault(entity_id, raw_name)
+
+        if display_updates:
+            self._fill_display_names(table, id_column, display_updates)
+        return len(display_updates)
+
 
 def ensure_sslmode(dsn: str) -> str:
     if "sslmode=" in dsn:
