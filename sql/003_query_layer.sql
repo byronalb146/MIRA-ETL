@@ -29,12 +29,14 @@ create schema if not exists query;
 -- son 1-a-muchos desde MIRA-ETL commit d483009 / ab1bed2). Ver
 -- query.v_process_buyers / v_process_suppliers para no perder esos casos.
 -- ----------------------------------------------------------------------------
-create or replace view query.v_process as
+do $migration$
+begin
+if to_regclass('query.v_process') is null then
+create view query.v_process as
 select
     core.process_id,
     core.country_code,
     core.source_system,
-    core.source_url,
     null::text as grain,                 -- pendiente: mart.procurement_record_core no lo tiene todavia
     core.data_quality_status,
     core.missing_fields,
@@ -78,7 +80,10 @@ select
 
     item.item_description,
     item.category_source,
-    item.category_normalised
+    item.category_normalised,
+    -- Las columnas nuevas deben agregarse al final: PostgreSQL no permite que
+    -- CREATE OR REPLACE VIEW inserte una columna entre columnas existentes.
+    core.source_url
 from mart.procurement_record_core core
 join mart.procurement_process_details proc using (process_id)
 left join mart.procurement_item_details item using (process_id)
@@ -106,13 +111,18 @@ left join lateral (
     where sd.process_id = core.process_id
     limit 1
 ) supplier_single on supplier_fanout.supplier_count = 1;
+end if;
+end $migration$;
 
 -- ----------------------------------------------------------------------------
 -- Relacion completa proceso <-> comprador/proveedor, sin aplanar. Es lo que
 -- responde correctamente "cuantos contratos gano X" cuando *_count > 1 en
 -- v_process.
 -- ----------------------------------------------------------------------------
-create or replace view query.v_process_buyers as
+do $migration$
+begin
+if to_regclass('query.v_process_buyers') is null then
+create view query.v_process_buyers as
 select
     bd.process_id,
     b.buyer_id,
@@ -120,8 +130,13 @@ select
     b.buyer_tax_id
 from mart.procurement_buyer_details bd
 join mart.buyers b on b.buyer_id = bd.buyer_id;
+end if;
+end $migration$;
 
-create or replace view query.v_process_suppliers as
+do $migration$
+begin
+if to_regclass('query.v_process_suppliers') is null then
+create view query.v_process_suppliers as
 select
     sd.process_id,
     s.supplier_id,
@@ -130,6 +145,8 @@ select
     s.supplier_type
 from mart.procurement_supplier_details sd
 join mart.suppliers s on s.supplier_id = sd.supplier_id;
+end if;
+end $migration$;
 
 -- ----------------------------------------------------------------------------
 -- v_buyers / v_suppliers: un candidato por entidad, con su conteo REAL. Nunca
@@ -137,7 +154,10 @@ join mart.suppliers s on s.supplier_id = sd.supplier_id;
 -- MIRA-API/docs/proposed-query-schema.md. name_normalised sirve como
 -- display_name: no hay (ni hace falta) un campo de grafia original.
 -- ----------------------------------------------------------------------------
-create or replace view query.v_buyers as
+do $migration$
+begin
+if to_regclass('query.v_buyers') is null then
+create view query.v_buyers as
 select
     b.buyer_id as entity_id,
     b.country_code,
@@ -148,8 +168,13 @@ select
 from mart.buyers b
 left join mart.procurement_buyer_details bd on bd.buyer_id = b.buyer_id
 group by b.buyer_id, b.country_code, b.name_normalised, b.buyer_tax_id;
+end if;
+end $migration$;
 
-create or replace view query.v_suppliers as
+do $migration$
+begin
+if to_regclass('query.v_suppliers') is null then
+create view query.v_suppliers as
 select
     s.supplier_id as entity_id,
     s.country_code,
@@ -161,6 +186,8 @@ select
 from mart.suppliers s
 left join mart.procurement_supplier_details sd on sd.supplier_id = s.supplier_id
 group by s.supplier_id, s.country_code, s.name_normalised, s.supplier_tax_id, s.supplier_type;
+end if;
+end $migration$;
 
 -- ----------------------------------------------------------------------------
 -- Indices de trigrama. Sin esto, la resolucion de entidades de MIRA-API no es
@@ -178,7 +205,10 @@ create index if not exists idx_suppliers_name_trgm
 -- se usa para fusionar entidades -- solo para advertir (POSSIBLE_DUPLICATE_ENTITY
 -- en el contrato de respuesta de MIRA-API).
 -- ----------------------------------------------------------------------------
-create or replace view query.v_duplicate_hints as
+do $migration$
+begin
+if to_regclass('query.v_duplicate_hints') is null then
+create view query.v_duplicate_hints as
 select
     'supplier'::text as entity_type,
     a.supplier_id as entity_id_a,
@@ -210,12 +240,17 @@ join mart.buyers b
     and a.buyer_id < b.buyer_id
     and a.name_normalised % b.name_normalised
 where similarity(a.name_normalised, b.name_normalised) >= 0.5;
+end if;
+end $migration$;
 
 -- ----------------------------------------------------------------------------
 -- v_coverage: que pais/periodo esta realmente cargado, para que MIRA-API
 -- distinga "cero porque no hubo" de "cero porque no tenemos el dato".
 -- ----------------------------------------------------------------------------
-create or replace view query.v_coverage as
+do $migration$
+begin
+if to_regclass('query.v_coverage') is null then
+create view query.v_coverage as
 select
     r.source as country_code,
     r.period,
@@ -226,3 +261,5 @@ select
 from audit.etl_runs r
 left join audit.etl_row_counts rc on rc.run_id = r.id
 where r.status = 'SUCCESS';
+end if;
+end $migration$;

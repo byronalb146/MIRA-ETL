@@ -88,6 +88,14 @@ class DatabaseSchemaContractTest(unittest.TestCase):
             ["mart.procurement_buyer_details has unexpected columns buyer_name"],
         )
 
+    def test_accepts_known_query_layer_extensions(self) -> None:
+        actual = {table: set(columns) for table, columns in SCHEMA_CONTRACT.items()}
+        actual["mart.procurement_record_core"].add("grain")
+        actual["mart.suppliers"].add("display_name")
+        actual["mart.buyers"].add("display_name")
+
+        self.assertEqual(schema_mismatches(actual), [])
+
 
 def create_table_body(sql: str, table: str) -> str | None:
     match = re.search(

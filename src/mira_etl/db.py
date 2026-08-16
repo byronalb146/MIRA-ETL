@@ -75,6 +75,15 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
     },
 }
 
+# Additive columns managed by MIRA-API are safe for this ETL to ignore. Keep
+# this list explicit so genuinely stale or accidental columns still fail schema
+# validation.
+ALLOWED_SCHEMA_EXTENSIONS: dict[str, set[str]] = {
+    "mart.procurement_record_core": {"grain"},
+    "mart.suppliers": {"display_name"},
+    "mart.buyers": {"display_name"},
+}
+
 
 CORE_SQL = """
     insert into mart.procurement_record_core (
@@ -979,7 +988,10 @@ def schema_mismatches(actual: dict[str, set[str]]) -> list[str]:
             mismatches.append(
                 f"{table} missing columns {', '.join(missing_columns)}"
             )
-        unexpected_columns = sorted(actual[table] - expected_columns)
+        allowed_extensions = ALLOWED_SCHEMA_EXTENSIONS.get(table, set())
+        unexpected_columns = sorted(
+            actual[table] - expected_columns - allowed_extensions
+        )
         if unexpected_columns:
             mismatches.append(
                 f"{table} has unexpected columns {', '.join(unexpected_columns)}"
