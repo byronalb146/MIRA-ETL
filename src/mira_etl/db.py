@@ -45,7 +45,7 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
         "source_url", "extracted_at", "source_last_modified_at",
         "connector_version", "raw_payload", "raw_payload_hash",
         "normalisation_status", "normalised_at", "data_quality_status",
-        "missing_fields",
+        "missing_fields", "grain",
     },
     "mart.procurement_process_details": {
         "process_id", "process_number", "title", "description",
@@ -75,11 +75,12 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
     },
 }
 
-# Additive columns managed by MIRA-API are safe for this ETL to ignore. Keep
-# this list explicit so genuinely stale or accidental columns still fail schema
-# validation.
+# Columns that other in-flight branches may add to the live database ahead of
+# this one merging. Kept explicit so validate_schema() tolerates them instead
+# of failing, while genuinely stale or accidental columns still fail.
+# `grain` is NOT here: this branch makes it a required SCHEMA_CONTRACT column
+# (see sql/003_grain.sql), so it must always be present, not just tolerated.
 ALLOWED_SCHEMA_EXTENSIONS: dict[str, set[str]] = {
-    "mart.procurement_record_core": {"grain"},
     "mart.suppliers": {"display_name"},
     "mart.buyers": {"display_name"},
 }
@@ -90,13 +91,13 @@ CORE_SQL = """
         process_id, country_code, source_system, source_record_id, source_url,
         extracted_at, source_last_modified_at, connector_version,
         raw_payload, raw_payload_hash, normalisation_status, normalised_at,
-        data_quality_status, missing_fields
+        data_quality_status, missing_fields, grain
     )
     values (
         %(process_id)s, %(country_code)s, %(source_system)s, %(source_record_id)s, %(source_url)s,
         %(extracted_at)s, %(source_last_modified_at)s, %(connector_version)s,
         %(raw_payload)s::jsonb, %(raw_payload_hash)s, %(normalisation_status)s, %(normalised_at)s,
-        %(data_quality_status)s, %(missing_fields)s::jsonb
+        %(data_quality_status)s, %(missing_fields)s::jsonb, %(grain)s
     )
     on conflict (process_id)
     do update set
@@ -111,7 +112,8 @@ CORE_SQL = """
         normalisation_status = excluded.normalisation_status,
         normalised_at = excluded.normalised_at,
         data_quality_status = excluded.data_quality_status,
-        missing_fields = excluded.missing_fields
+        missing_fields = excluded.missing_fields,
+        grain = excluded.grain
 """
 
 PROCESS_DETAIL_SQL = """

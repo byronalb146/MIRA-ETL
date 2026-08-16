@@ -44,8 +44,17 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         self.assertNotRegex(sql, r"(?im)^\s*(alter|drop|delete|update|insert)\b")
 
     def test_sql_declares_every_table_and_column_used_by_db(self) -> None:
-        sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
-            encoding="utf-8"
+        sql_dir = Path(__file__).parents[1] / "sql"
+        sql = (sql_dir / "001_init.sql").read_text(encoding="utf-8")
+        # Columns added to an already-existing production table (like grain,
+        # sql/003_grain.sql) live in their own numbered file, never as an
+        # alter/drop/delete/update in 001_init.sql -- that file only ever
+        # shows the fresh-install shape (see
+        # test_initial_schema_contains_no_historical_migrations). So the
+        # ALTER fallback below has to search every sql/*.sql file, not just
+        # 001_init.sql.
+        all_sql = "\n".join(
+            path.read_text(encoding="utf-8") for path in sorted(sql_dir.glob("*.sql"))
         )
         for table, columns in SCHEMA_CONTRACT.items():
             body = create_table_body(sql, table)
@@ -55,12 +64,12 @@ class DatabaseSchemaContractTest(unittest.TestCase):
                 declared_by_alter = re.search(
                     rf"alter\s+table\s+{re.escape(table)}.*?"
                     rf"add\s+column\s+if\s+not\s+exists\s+{re.escape(column)}\b",
-                    sql,
+                    all_sql,
                     flags=re.IGNORECASE | re.DOTALL,
                 )
                 self.assertTrue(
                     declared_in_create or declared_by_alter,
-                    f"{table}.{column} is used by db.py but absent from 001_init.sql",
+                    f"{table}.{column} is used by db.py but absent from sql/*.sql",
                 )
 
     def test_accepts_the_declared_schema(self) -> None:

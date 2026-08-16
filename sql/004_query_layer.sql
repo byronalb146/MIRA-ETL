@@ -9,12 +9,8 @@
 -- proposito -- ver docs/query_layer_access.md para ese paso, que involucra
 -- fijar un secreto y no debe vivir en un archivo versionado.
 --
--- Pendiente documentado en MIRA-API/docs/proposed-query-schema.md: la columna
--- `grain` (PROCESS vs LINE_ITEM) todavia no existe en
--- mart.procurement_record_core, asi que v_process la expone como NULL en vez
--- de adivinarla por country_code -- mentir en silencio es peor que admitir
--- que el dato no esta. Se agrega en una migracion aparte cuando cada conector
--- la setee explicitamente.
+-- Depende de sql/003_grain.sql (debe correr antes: agrega la columna grain
+-- que v_process expone tal cual, sin adivinarla por country_code).
 
 create extension if not exists pg_trgm;
 
@@ -37,7 +33,7 @@ select
     core.process_id,
     core.country_code,
     core.source_system,
-    null::text as grain,                 -- pendiente: mart.procurement_record_core no lo tiene todavia
+    core.grain,
     core.data_quality_status,
     core.missing_fields,
     core.extracted_at,
