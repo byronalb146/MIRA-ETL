@@ -131,9 +131,6 @@ def build_records(
             "connector_version": connector_version,
             "raw_payload": raw_payload,
             "raw_payload_hash": stable_json_hash(raw_payload),
-            # NRO_SICOP + LINEA + PROD_ID: one mart row per purchase line, not
-            # per procedure.
-            "grain": "LINE_ITEM",
             "normalisation_status": "PROCESSED",
             "normalised_at": datetime.now(UTC),
             "data_quality_status": "PARTIAL",

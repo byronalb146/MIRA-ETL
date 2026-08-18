@@ -10,7 +10,7 @@ def strip_sql_comments(sql: str) -> str:
 
 
 class MiraQueryRoleTest(unittest.TestCase):
-    """mira_query is the only role MIRA-API connects with. Its whole job is
+    """mira_query is MIRA-API's read-only query connection. Its whole job is
     to make it structurally impossible for that connection to read
     mart/raw/staging/audit, even if the sqlglot validator in
     nlq/validator.py has a bug -- the role has to be the second, independent
@@ -19,7 +19,7 @@ class MiraQueryRoleTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.sql = (
-            Path(__file__).parents[1] / "sql" / "006_mira_query_role.sql"
+            Path(__file__).parents[1] / "sql" / "011_query_role.sql"
         ).read_text(encoding="utf-8")
 
     def test_role_is_created_with_login_and_noinherit(self) -> None:
@@ -51,7 +51,7 @@ class MiraQueryRoleTest(unittest.TestCase):
             self.assertNotRegex(
                 executable,
                 rf"(?i)\b{forbidden_schema}\b",
-                f"006_mira_query_role.sql grants something on schema {forbidden_schema}",
+                f"011_query_role.sql grants something on schema {forbidden_schema}",
             )
 
     def test_no_password_is_committed(self) -> None:
@@ -64,8 +64,8 @@ class MiraQueryRoleTest(unittest.TestCase):
         sql_dir = Path(__file__).parents[1] / "sql"
         files = sorted(path.name for path in sql_dir.glob("*.sql"))
         self.assertLess(
-            files.index("004_query_layer.sql"),
-            files.index("006_mira_query_role.sql"),
+            files.index("010_query_views.sql"),
+            files.index("011_query_role.sql"),
             "the role grants must run after query.* exists, or "
             "'grant ... on schema query' fails with schema does not exist",
         )

@@ -45,7 +45,7 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
         "source_url", "extracted_at", "source_last_modified_at",
         "connector_version", "raw_payload", "raw_payload_hash",
         "normalisation_status", "normalised_at", "data_quality_status",
-        "missing_fields", "grain",
+        "missing_fields",
     },
     "mart.procurement_process_details": {
         "process_id", "process_number", "title", "description",
@@ -82,29 +82,18 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
     },
 }
 
-# Columns that other in-flight branches may add to the live database ahead of
-# this one merging. Kept explicit so validate_schema() tolerates them instead
-# of failing, while genuinely stale or accidental columns still fail.
-# `grain` is NOT here: this branch makes it a required SCHEMA_CONTRACT column
-# (see sql/003_grain.sql), so it must always be present, not just tolerated.
-ALLOWED_SCHEMA_EXTENSIONS: dict[str, set[str]] = {
-    "mart.suppliers": {"display_name"},
-    "mart.buyers": {"display_name"},
-}
-
-
 CORE_SQL = """
     insert into mart.procurement_record_core (
         process_id, country_code, source_system, source_record_id, source_url,
         extracted_at, source_last_modified_at, connector_version,
         raw_payload, raw_payload_hash, normalisation_status, normalised_at,
-        data_quality_status, missing_fields, grain
+        data_quality_status, missing_fields
     )
     values (
         %(process_id)s, %(country_code)s, %(source_system)s, %(source_record_id)s, %(source_url)s,
         %(extracted_at)s, %(source_last_modified_at)s, %(connector_version)s,
         %(raw_payload)s::jsonb, %(raw_payload_hash)s, %(normalisation_status)s, %(normalised_at)s,
-        %(data_quality_status)s, %(missing_fields)s::jsonb, %(grain)s
+        %(data_quality_status)s, %(missing_fields)s::jsonb
     )
     on conflict (process_id)
     do update set
@@ -119,8 +108,7 @@ CORE_SQL = """
         normalisation_status = excluded.normalisation_status,
         normalised_at = excluded.normalised_at,
         data_quality_status = excluded.data_quality_status,
-        missing_fields = excluded.missing_fields,
-        grain = excluded.grain
+        missing_fields = excluded.missing_fields
 """
 
 PROCESS_DETAIL_SQL = """
@@ -1082,10 +1070,7 @@ def schema_mismatches(actual: dict[str, set[str]]) -> list[str]:
             mismatches.append(
                 f"{table} missing columns {', '.join(missing_columns)}"
             )
-        allowed_extensions = ALLOWED_SCHEMA_EXTENSIONS.get(table, set())
-        unexpected_columns = sorted(
-            actual[table] - expected_columns - allowed_extensions
-        )
+        unexpected_columns = sorted(actual[table] - expected_columns)
         if unexpected_columns:
             mismatches.append(
                 f"{table} has unexpected columns {', '.join(unexpected_columns)}"

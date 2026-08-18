@@ -577,9 +577,25 @@ function escapeHtml(s) {
 }
 
 function suppliersForRecord(record) {
-  const details = record.supplier_details;
-  const relations = Array.isArray(details) ? details : (details ? [details] : []);
-  return relations.map(relation => relation?.supplier).filter(Boolean);
+  return (record.awards || []).flatMap(award =>
+    (award.award_suppliers || []).map(relation => relation?.supplier).filter(Boolean)
+  );
+}
+
+function itemsForRecord(record) {
+  const details = record.item_details;
+  return Array.isArray(details) ? details : (details ? [details] : []);
+}
+
+function awardedAmountsForRecord(record) {
+  const totals = new Map();
+  (record.awards || []).forEach(award => {
+    const amount = Number(award.awarded_amount);
+    if (award.awarded_amount === null || award.awarded_amount === undefined || Number.isNaN(amount)) return;
+    const currency = award.currency_code || "";
+    totals.set(currency, (totals.get(currency) || 0) + amount);
+  });
+  return [...totals.entries()].map(([currency, amount]) => formatAmount(amount, currency)).join(" · ");
 }
 
 function buyersForRecord(record) {
@@ -606,11 +622,12 @@ function renderRecords(records, showCountryTag) {
     const buyerNames = buyers.map(buyer => buyer.name_normalised).filter(Boolean);
     const suppliers = suppliersForRecord(r);
     const supplierNames = suppliers.map(supplier => supplier.name_normalised).filter(Boolean);
-    const item = r.item_details || {};
+    const items = itemsForRecord(r);
+    const item = items[0] || {};
     const statusLabel = STATUS_LABELS[detail.process_status] || detail.source_status || "Sin estado";
     const pub = formatDate(detail.publication_date);
     const close = formatDate(detail.closing_date);
-    const awardedAmount = formatAmount(detail.awarded_amount, detail.currency_code);
+    const awardedAmount = awardedAmountsForRecord(r);
 
     return `
       <article class="record-card">
@@ -692,9 +709,9 @@ async function main() {
   // un único límite combinado.
   const selectColumns = `
     process_id, country_code,
-    process_details:procurement_process_details(process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, award_date, estimated_amount, awarded_amount, currency_code),
+    process_details:procurement_process_details(process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, estimated_amount, currency_code),
     buyer_details:procurement_buyer_details(buyer:buyers(name_normalised)),
-    supplier_details:procurement_supplier_details(supplier:suppliers(name_normalised, supplier_type)),
+    awards:procurement_awards(award_date, awarded_amount, currency_code, award_suppliers:procurement_award_suppliers(supplier:suppliers(name_normalised, supplier_type))),
     item_details:procurement_item_details(item_description, category_source, category_normalised)
   `;
 
@@ -747,7 +764,7 @@ async function main() {
       const detail = r.process_details || {};
       const buyers = buyersForRecord(r);
       const suppliers = suppliersForRecord(r);
-      const item = r.item_details || {};
+      const items = itemsForRecord(r);
       if (selectedCountry && r.country_code !== selectedCountry) return false;
       if (status && detail.process_status !== status) return false;
       if (!q) return true;
@@ -757,8 +774,7 @@ async function main() {
         detail.description,
         ...buyers.map(buyer => buyer.name_normalised),
         ...suppliers.map(supplier => supplier.name_normalised),
-        item.item_description,
-        item.category_source,
+        ...items.flatMap(item => [item.item_description, item.category_source]),
       ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(q);
     });
@@ -847,9 +863,9 @@ async function mainPaginated() {
 
   const selectColumns = `
     process_id, country_code, source_record_id, source_system,
-    process_details:procurement_process_details!inner(process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, award_date, estimated_amount, awarded_amount, currency_code),
+    process_details:procurement_process_details!inner(process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, estimated_amount, currency_code),
     buyer_details:procurement_buyer_details(buyer:buyers(name_normalised)),
-    supplier_details:procurement_supplier_details(supplier:suppliers(name_normalised, supplier_type)),
+    awards:procurement_awards(award_date, awarded_amount, currency_code, award_suppliers:procurement_award_suppliers(supplier:suppliers(name_normalised, supplier_type))),
     item_details:procurement_item_details(item_description, category_source, category_normalised)
   `;
 

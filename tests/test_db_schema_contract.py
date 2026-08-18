@@ -46,13 +46,8 @@ class DatabaseSchemaContractTest(unittest.TestCase):
     def test_sql_declares_every_table_and_column_used_by_db(self) -> None:
         sql_dir = Path(__file__).parents[1] / "sql"
         sql = (sql_dir / "001_init.sql").read_text(encoding="utf-8")
-        # Columns added to an already-existing production table (like grain,
-        # sql/003_grain.sql) live in their own numbered file, never as an
-        # alter/drop/delete/update in 001_init.sql -- that file only ever
-        # shows the fresh-install shape (see
-        # test_initial_schema_contains_no_historical_migrations). So the
-        # ALTER fallback below has to search every sql/*.sql file, not just
-        # 001_init.sql.
+        # Additions may live in later numbered SQL files, while 001_init.sql
+        # remains the CREATE-only definition for fresh installations.
         all_sql = "\n".join(
             path.read_text(encoding="utf-8") for path in sorted(sql_dir.glob("*.sql"))
         )
@@ -96,15 +91,6 @@ class DatabaseSchemaContractTest(unittest.TestCase):
             schema_mismatches(actual),
             ["mart.procurement_buyer_details has unexpected columns buyer_name"],
         )
-
-    def test_accepts_known_query_layer_extensions(self) -> None:
-        actual = {table: set(columns) for table, columns in SCHEMA_CONTRACT.items()}
-        actual["mart.procurement_record_core"].add("grain")
-        actual["mart.suppliers"].add("display_name")
-        actual["mart.buyers"].add("display_name")
-
-        self.assertEqual(schema_mismatches(actual), [])
-
 
 def all_sql_text() -> str:
     sql_dir = Path(__file__).parents[1] / "sql"
