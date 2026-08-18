@@ -80,7 +80,14 @@ values
     ('query.v_award_items', 'item_id', 'Articulo relacionado con la adjudicacion.', 'text', null, null, false, null),
 
     ('query.v_award_suppliers', 'award_id', 'Adjudicacion relacionada con el proveedor.', 'text', null, null, false, null),
-    ('query.v_award_suppliers', 'supplier_id', 'Proveedor relacionado con la adjudicacion.', 'bigint', null, null, false, null)
+    ('query.v_award_suppliers', 'supplier_id', 'Proveedor relacionado con la adjudicacion.', 'bigint', null, null, false, null),
+
+    ('query.v_coverage', 'source_system', 'Sistema de contrataciones de la corrida del ETL (igual valor que v_process.source_system; no es un codigo de pais).', 'text', null, null, false, null),
+    ('query.v_coverage', 'period', 'Periodo que proceso esa corrida, tal como lo registro el ETL.', 'text', null, null, false, 'Texto libre, no un rango tipado -- no asumir un formato fijo sin confirmarlo.'),
+    ('query.v_coverage', 'status', 'Resultado de la corrida. Esta vista solo incluye corridas SUCCESS.', 'text', array['SUCCESS'], null, false, null),
+    ('query.v_coverage', 'loaded_at', 'Momento en que termino esa corrida del ETL.', 'timestamptz', null, null, false, null),
+    ('query.v_coverage', 'table_name', 'Tabla que esa corrida cargo.', 'text', null, null, false, null),
+    ('query.v_coverage', 'row_count', 'Cuantas filas escribio el ETL en esa tabla durante esa corrida.', 'bigint', null, null, true, 'Un pais/periodo ausente de esta vista no tiene datos cargados -- distinto de un conteo real en cero.')
 on conflict (view_name, column_name) do update set
     description_es = excluded.description_es,
     data_type = excluded.data_type,
