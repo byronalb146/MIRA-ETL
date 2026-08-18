@@ -23,6 +23,44 @@ class ConnectorRoutingTest(unittest.TestCase):
             },
         )
 
+    def test_every_source_selects_a_transform_adapter(self) -> None:
+        configs = SourceConfig.discover(CONFIG_DIR)
+        self.assertEqual(
+            {config.source: config.transform_adapter for config in configs},
+            {
+                "costa_rica_sicop": "relational_awards_csv",
+                "guatemala_guatecompras": "ocds",
+                "nicaragua_siscae": "active_procedures",
+            },
+        )
+
+    def test_new_source_name_reuses_existing_adapter_without_python_routing(self) -> None:
+        config = SourceConfig(
+            source="el_salvador_active_portal",
+            country_code="SV",
+            source_system="Portal activo El Salvador",
+            connector_version="test",
+            download={"type": "html_session_scrape", "base_url": "https://example.test"},
+            transform={
+                "adapter": "active_procedures",
+                "id_prefix": "MIRA-SV-",
+                "dataset": "procesos_activos",
+                "status_map": {"vigente": "OPEN"},
+            },
+        )
+        rows = {"procesos_activos": [{
+            "numero_proceso": "SV-1/2026",
+            "tipo_procedimiento": "Licitacion",
+            "estado": "Vigente",
+            "institucion": "Comprador SV",
+        }]}
+
+        records = transform_source(config=config, period="202608", source_rows=rows)
+
+        self.assertEqual(records[0]["country_code"], "SV")
+        self.assertEqual(records[0]["process_status"], "OPEN")
+        self.assertTrue(records[0]["process_id"].startswith("MIRA-SV-"))
+
     def test_costa_rica_uses_its_csv_transformer(self) -> None:
         config = SourceConfig.load(CONFIG_DIR, "costa_rica_sicop")
         rows = {

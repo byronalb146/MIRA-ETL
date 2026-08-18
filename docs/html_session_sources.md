@@ -46,6 +46,7 @@ categorías y descripción. Si otro portal usa HTML o etiquetas diferentes,
 debe agregarse un parser nuevo al registro `PARSERS`; el motor de sesión,
 reintentos y paginación sigue siendo el mismo.
 
-La extracción es genérica, pero cada nueva fuente todavía necesita su
-transformador hacia el modelo MIRA y su entrada de routing en `pipeline.py`,
-porque la semántica de los campos puede variar aunque el portal sea idéntico.
+Si la salida conserva la forma `active_procedures`, la nueva fuente selecciona
+`transform.adapter: active_procedures` y no necesita cambios de routing en
+Python. Si el HTML produce otra semántica, debe agregarse un parser o adaptador
+reutilizable para ese nuevo formato.

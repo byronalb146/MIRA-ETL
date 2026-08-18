@@ -5,7 +5,7 @@ from pathlib import Path
 
 from mira_etl.config import SourceConfig
 from mira_etl.db import buyer_records_for, supplier_records_for
-from mira_etl.transform_gt import build_record
+from mira_etl.adapters.ocds import build_record
 
 
 class MultiplePartiesTest(unittest.TestCase):

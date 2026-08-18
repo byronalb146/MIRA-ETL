@@ -72,7 +72,7 @@ esta version -- son procesos que, por definicion, aun no tienen adjudicacion.
 | Comprador | `buyer_id_source` | No expuesto en el registro individual | `NULL` | `mart.buyers.buyer_id_source` |
 | Comprador | `buyer_tax_id` | No existe en la fuente | `NULL` | `mart.buyers.buyer_tax_id` |
 | Contratacion | `procurement_method` | Primera celda del listado, parte de texto (ej. `LICITACION SELECTIVA`) | Copia directa | `mart.procurement_process_details.procurement_method` |
-| Contratacion | `process_status` | Bloque de detalle, etiqueta "Estado:" | Normaliza a catalogo MIRA via `STATUS_MAP` (`Vigente -> OPEN`, ver `transform_ni.py`) | `mart.procurement_process_details.process_status` |
+| Contratacion | `process_status` | Bloque de detalle, etiqueta "Estado:" | Normaliza con `transform.status_map` de la configuracion de la fuente | `mart.procurement_process_details.process_status` |
 | Contratacion | `source_status` | Bloque de detalle, etiqueta "Estado:" | Valor original de la fuente, sin normalizar | `mart.procurement_process_details.source_status` |
 | Fechas | `publication_date` | Bloque de detalle, etiqueta "Publicacion:" | Parseo a `timestamptz` | `mart.procurement_process_details.publication_date` |
 | Fechas | `closing_date` | Bloque de detalle, etiqueta "Cierre:" | Parseo a `timestamptz` | `mart.procurement_process_details.closing_date` |

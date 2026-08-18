@@ -8,12 +8,10 @@ from typing import Any
 import ijson
 
 from mira_etl.config import SourceConfig
+from mira_etl.adapters import transform_batch, transform_record
 from mira_etl.csvio import read_csv_rows
 from mira_etl.db import Database
 from mira_etl.extract import extract_zip, obtain_zip, resolve_dataset_dir
-from mira_etl.transform_cr import build_records as build_records_cr
-from mira_etl.transform_gt import build_record as build_record_gt
-from mira_etl.transform_ni import build_records as build_records_ni
 from mira_etl.validation import validate_records
 
 
@@ -209,20 +207,7 @@ def transform_source(
     period: str,
     source_rows: dict[str, list[dict[str, Any]]],
 ) -> list[dict[str, Any]]:
-    builders = {
-        "costa_rica_sicop": build_records_cr,
-        "nicaragua_siscae": build_records_ni,
-    }
-    try:
-        builder = builders[config.source]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported source: {config.source}") from exc
-    return builder(
-        config=config,
-        period=period,
-        connector_version=config.connector_version,
-        source_rows=source_rows,
-    )
+    return transform_batch(config=config, period=period, source_rows=source_rows)
 
 
 def load_records(
@@ -327,19 +312,8 @@ def build_json_record(
     connector_version: str,
     source_row: dict[str, Any],
 ) -> dict[str, Any]:
-    builders = {
-        "guatemala_guatecompras": build_record_gt,
-    }
-    try:
-        builder = builders[config.source]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported JSON source: {config.source}") from exc
-    return builder(
-        config=config,
-        period=period,
-        connector_version=connector_version,
-        source_row=source_row,
-    )
+    del connector_version
+    return transform_record(config=config, period=period, source_row=source_row)
 
 
 def flush_record_batch(

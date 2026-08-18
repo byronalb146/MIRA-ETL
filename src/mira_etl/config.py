@@ -19,6 +19,7 @@ class SourceConfig:
     files: dict[str, list[str]] = field(default_factory=lambda: {"required": [], "optional": []})
     csv: dict[str, Any] = field(default_factory=dict)
     processing: dict[str, Any] = field(default_factory=dict)
+    transform: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def load(cls, config_dir: Path, source: str) -> "SourceConfig":
@@ -45,6 +46,15 @@ class SourceConfig:
     def delimiter_for(self, filename: str) -> str:
         delimiters = self.csv.get("delimiters", {})
         return delimiters.get(filename, self.csv.get("default_delimiter", ";"))
+
+    @property
+    def transform_adapter(self) -> str:
+        adapter = self.transform.get("adapter")
+        if not adapter:
+            raise ValueError(
+                f"Source '{self.source}' must define transform.adapter"
+            )
+        return str(adapter)
 
     def source_url_for_period(
         self,

@@ -42,7 +42,11 @@ def build_record(
         or compiled.get("id")
     )
     if not source_record_id:
-        raise ValueError("Guatemala OCDS record is missing ocid/id")
+        raise ValueError(f"OCDS source '{config.source}' record is missing ocid/id")
+
+    id_prefix = str(config.transform.get("id_prefix", f"MIRA-{config.country_code}-"))
+    item_prefix = f"{id_prefix.rstrip('-')}-ITEM-"
+    award_prefix = f"{id_prefix.rstrip('-')}-AWARD-"
 
     parties = compiled.get("parties") or []
     estimated_value = tender.get("value") or {}
@@ -59,7 +63,7 @@ def build_record(
             item_id = stable_id(
                 config.country_code, source_record_id,
                 source_item_id or source_item.get("description") or str(position),
-                prefix="MIRA-GT-ITEM-",
+                prefix=item_prefix,
             )
             if source_item_id:
                 item_ids_by_source[str(source_item_id)] = item_id
@@ -90,7 +94,7 @@ def build_record(
         normalised_awards.append({
             "award_id": stable_id(
                 config.country_code, source_record_id,
-                source_award_id or str(position), prefix="MIRA-GT-AWARD-",
+                source_award_id or str(position), prefix=award_prefix,
             ),
             "source_award_id": source_award_id,
             "item_ids": linked_item_ids,
@@ -146,7 +150,7 @@ def build_record(
         "process_id": stable_id(
             config.country_code,
             source_record_id,
-            prefix="MIRA-GT-",
+            prefix=id_prefix,
         ),
         "process_number": tender.get("id") or source_record_id,
         "title": tender.get("title") or award.get("title"),

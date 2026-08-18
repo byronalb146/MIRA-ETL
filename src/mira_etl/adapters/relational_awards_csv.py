@@ -28,10 +28,14 @@ def build_records(
     connector_version: str,
     source_rows: dict[str, list[dict[str, str | None]]],
 ) -> list[dict[str, Any]]:
-    carteles = index_by(source_rows.get("DetalleCarteles.csv", []), "NRO_SICOP")
-    proveedores = index_by(source_rows.get("Proveedores.csv", []), "CEDULA_PROVEEDOR")
-    instituciones = index_by(source_rows.get("InstitucionesRegistradas.csv", []), "CEDULA")
-    adjudicaciones = source_rows.get("ProcedimientoAdjudicacion.csv", [])
+    datasets = config.transform.get("datasets") or {}
+    carteles = index_by(source_rows.get(datasets.get("processes", "DetalleCarteles.csv"), []), "NRO_SICOP")
+    proveedores = index_by(source_rows.get(datasets.get("suppliers", "Proveedores.csv"), []), "CEDULA_PROVEEDOR")
+    instituciones = index_by(source_rows.get(datasets.get("buyers", "InstitucionesRegistradas.csv"), []), "CEDULA")
+    adjudicaciones = source_rows.get(datasets.get("awards", "ProcedimientoAdjudicacion.csv"), [])
+    id_prefix = str(config.transform.get("id_prefix", f"MIRA-{config.country_code}-"))
+    item_prefix = f"{id_prefix.rstrip('-')}-ITEM-"
+    award_prefix = f"{id_prefix.rstrip('-')}-AWARD-"
 
     extracted_at = datetime.now(UTC)
     records: list[dict[str, Any]] = []
@@ -59,7 +63,7 @@ def build_records(
         for award_row in process_awards:
             item_id = stable_id(
                 config.country_code, nro_sicop, award_row.get("LINEA"),
-                award_row.get("PROD_ID"), prefix="MIRA-CR-ITEM-",
+                award_row.get("PROD_ID"), prefix=item_prefix,
             )
             if item_id not in seen_items:
                 seen_items.add(item_id)
@@ -78,7 +82,7 @@ def build_records(
                 "award_id": stable_id(
                     config.country_code, nro_sicop, award_row.get("LINEA"),
                     award_row.get("PROD_ID"), supplier_source_id,
-                    prefix="MIRA-CR-AWARD-",
+                    prefix=award_prefix,
                 ),
                 "source_award_id": None,
                 "item_ids": [item_id],
@@ -102,7 +106,7 @@ def build_records(
             "process_id": stable_id(
                 config.country_code,
                 nro_sicop,
-                prefix="MIRA-CR-",
+                prefix=id_prefix,
             ),
             "process_number": row.get("NUMERO_PROCEDIMIENTO") or cartel.get("NRO_PROCEDIMIENTO"),
             "title": cartel.get("CARTEL_NM") or row.get("DESCR_PROCEDIMIENTO"),

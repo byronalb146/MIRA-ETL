@@ -3,6 +3,18 @@
   "country_code": "NI",
   "source_system": "SISCAE Nicaragua",
   "connector_version": "ni-siscae-0.1.0",
+  "transform": {
+    "adapter": "active_procedures",
+    "id_prefix": "MIRA-NI-",
+    "dataset": "procesos_vigentes",
+    "status_map": {
+      "vigente": "OPEN",
+      "publicado": "PUBLISHED",
+      "adjudicado": "AWARDED",
+      "cancelado": "CANCELLED",
+      "desierto": "DESERTED"
+    }
+  },
   "download": {
     "type": "html_session_scrape",
     "base_url": "https://www.gestion.nicaraguacompra.gob.ni/siscae/portal/adquisiciones-gestion/busquedaProcedimientosVigentes?proc_estado=VIGENTE",

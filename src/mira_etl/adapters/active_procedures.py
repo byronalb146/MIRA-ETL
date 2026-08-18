@@ -18,20 +18,6 @@ MINIMUM_FIELDS = [
     "publication_date",
 ]
 
-# Nicaragua only exposes a single free-text status; MIRA needs it mapped onto its
-# fixed catalog (see sql/001_init.sql, mart.procurement_process_details.process_status).
-STATUS_MAP = {
-    "vigente": "OPEN",
-    "adjudicado": "AWARDED",
-    "en ejecucion": "CONTRACTED",
-    "ejecucion": "CONTRACTED",
-    "cancelado": "CANCELLED",
-    "desierto": "DESERTED",
-    "suspendido": "SUSPENDED",
-    "cerrado": "COMPLETED",
-}
-
-
 def build_records(
     *,
     config: SourceConfig,
@@ -39,15 +25,15 @@ def build_records(
     connector_version: str,
     source_rows: dict[str, list[dict[str, str | None]]],
 ) -> list[dict[str, Any]]:
-    """Builds MIRA-shaped records from SISCAE's "Procesos Vigentes" listing.
-
-    Only active (Vigente) processes are wired up in this connector version --
-    there is no supplier/award data here by definition, since these processes
-    have not been awarded yet. Awarded-process detail (supplier, RUC, awarded
-    amount) needs a separate, not-yet-reliable navigation and is intentionally
-    left out (see docs/nicaragua_siscae_mapping.md).
-    """
-    active_procedures = source_rows.get("procesos_vigentes", [])
+    """Build MIRA records from the shared active-procedures row shape."""
+    dataset = str(config.transform.get("dataset", "procesos_vigentes"))
+    active_procedures = source_rows.get(dataset, [])
+    id_prefix = str(config.transform.get("id_prefix", f"MIRA-{config.country_code}-"))
+    item_prefix = f"{id_prefix.rstrip('-')}-ITEM-"
+    status_map = {
+        str(key).lower(): str(value)
+        for key, value in (config.transform.get("status_map") or {}).items()
+    }
     extracted_at = datetime.now(UTC)
     records: list[dict[str, Any]] = []
 
@@ -58,7 +44,7 @@ def build_records(
         description = row.get("descripcion")
 
         record = {
-            "process_id": stable_id(config.country_code, source_record_id, prefix="MIRA-NI-"),
+            "process_id": stable_id(config.country_code, source_record_id, prefix=id_prefix),
             "process_number": row.get("numero_proceso"),
             "title": description,
             "description": description,
@@ -66,7 +52,7 @@ def build_records(
             "buyer_id_source": None,
             "buyer_tax_id": None,
             "procurement_method": row.get("tipo_procedimiento"),
-            "process_status": normalise_status(row.get("estado")),
+            "process_status": normalise_status(row.get("estado"), status_map),
             "source_status": row.get("estado"),
             "publication_date": parse_datetime(row.get("fecha_publicacion")),
             "closing_date": parse_datetime(row.get("fecha_cierre")),
@@ -75,7 +61,7 @@ def build_records(
             "items": [{
                 "item_id": stable_id(
                     config.country_code, source_record_id, "summary",
-                    prefix="MIRA-NI-ITEM-",
+                    prefix=item_prefix,
                 ),
                 "source_item_id": None,
                 "line_number": None,
@@ -119,10 +105,13 @@ def build_source_record_id(row: dict[str, str | None]) -> str:
     return f"{procedure_type}-{procedure_number}-{buyer_name}".strip("-")
 
 
-def normalise_status(source_status: str | None) -> str | None:
+def normalise_status(
+    source_status: str | None,
+    status_map: dict[str, str],
+) -> str | None:
     if not source_status:
         return None
-    return STATUS_MAP.get(source_status.strip().lower())
+    return status_map.get(source_status.strip().lower())
 
 
 def parse_datetime(value: str | None) -> datetime | None:
