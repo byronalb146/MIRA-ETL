@@ -286,7 +286,7 @@ def raw_value_for(record: dict[str, Any], field_name: str) -> object:
     payload = record.get("raw_payload") or {}
 
     if "proceso" in payload:  # nicaragua_siscae shape
-        proceso = payload.get("proceso") or {}
+        proceso = first_mapping(payload.get("proceso"))
         mapping = {
             "process_number": proceso.get("numero_proceso"),
             "title": proceso.get("descripcion"),
@@ -308,8 +308,9 @@ def raw_value_for(record: dict[str, Any], field_name: str) -> object:
         }
         return mapping.get(field_name)
 
-    adjudication = payload.get("procedimiento_adjudicacion") or {}
-    cartel = payload.get("detalle_cartel") or {}
+    adjudication = first_mapping(payload.get("procedimiento_adjudicacion"))
+    cartel = first_mapping(payload.get("detalle_cartel"))
+    supplier = first_mapping(payload.get("proveedor"))
 
     mapping = {
         "process_number": adjudication.get("NUMERO_PROCEDIMIENTO") or cartel.get("NRO_PROCEDIMIENTO"),
@@ -326,11 +327,19 @@ def raw_value_for(record: dict[str, Any], field_name: str) -> object:
         "currency_code": adjudication.get("MONEDA_ADJUDICADA"),
         "supplier_name": adjudication.get("NOMBRE_PROVEEDOR"),
         "supplier_tax_id": adjudication.get("CEDULA_PROVEEDOR"),
-        "supplier_type": (payload.get("proveedor") or {}).get("TIPO_PROVEEDOR"),
+        "supplier_type": supplier.get("TIPO_PROVEEDOR"),
         "item_description": adjudication.get("DESCR_BIEN_SERVICIO"),
         "source_last_modified_at": adjudication.get("fecha_rev"),
     }
     return mapping.get(field_name)
+
+
+def first_mapping(value: object) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        return next((item for item in value if isinstance(item, dict)), {})
+    return {}
 
 
 def is_blank(value: object) -> bool:
