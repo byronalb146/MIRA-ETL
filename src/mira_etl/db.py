@@ -40,33 +40,30 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
         "candidate_id", "run_id", "source", "period", "source_record_id",
         "raw_payload_hash", "payload", "created_at",
     },
-    "mart.procurement_record_core": {
+    "mart.processes": {
         "process_id", "country_code", "source_system", "source_record_id",
         "source_url", "extracted_at", "source_last_modified_at",
         "connector_version", "raw_payload", "raw_payload_hash",
         "normalisation_status", "normalised_at", "data_quality_status",
-        "missing_fields",
-    },
-    "mart.procurement_process_details": {
-        "process_id", "process_number", "title", "description",
+        "missing_fields", "process_number", "title", "description",
         "procurement_method", "process_status", "source_status",
         "publication_date", "closing_date", "estimated_amount", "currency_code",
     },
-    "mart.procurement_buyer_details": {
+    "mart.process_buyers": {
         "process_id", "buyer_id",
     },
-    "mart.procurement_item_details": {
+    "mart.items": {
         "item_id", "process_id", "source_item_id", "line_number",
         "item_description", "category_source", "category_normalised",
     },
-    "mart.procurement_awards": {
+    "mart.awards": {
         "award_id", "process_id", "source_award_id", "award_date",
         "awarded_amount", "currency_code",
     },
-    "mart.procurement_award_items": {
+    "mart.award_items": {
         "award_id", "item_id",
     },
-    "mart.procurement_award_suppliers": {
+    "mart.award_suppliers": {
         "award_id", "supplier_id",
     },
     "mart.suppliers": {
@@ -83,17 +80,22 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
 }
 
 CORE_SQL = """
-    insert into mart.procurement_record_core (
+    insert into mart.processes (
         process_id, country_code, source_system, source_record_id, source_url,
         extracted_at, source_last_modified_at, connector_version,
         raw_payload, raw_payload_hash, normalisation_status, normalised_at,
-        data_quality_status, missing_fields
+        data_quality_status, missing_fields, process_number, title, description,
+        procurement_method, process_status, source_status, publication_date,
+        closing_date, estimated_amount, currency_code
     )
     values (
         %(process_id)s, %(country_code)s, %(source_system)s, %(source_record_id)s, %(source_url)s,
         %(extracted_at)s, %(source_last_modified_at)s, %(connector_version)s,
         %(raw_payload)s::jsonb, %(raw_payload_hash)s, %(normalisation_status)s, %(normalised_at)s,
-        %(data_quality_status)s, %(missing_fields)s::jsonb
+        %(data_quality_status)s, %(missing_fields)s::jsonb, %(process_number)s,
+        %(title)s, %(description)s, %(procurement_method)s, %(process_status)s,
+        %(source_status)s, %(publication_date)s, %(closing_date)s,
+        %(estimated_amount)s, %(currency_code)s
     )
     on conflict (process_id)
     do update set
@@ -108,17 +110,7 @@ CORE_SQL = """
         normalisation_status = excluded.normalisation_status,
         normalised_at = excluded.normalised_at,
         data_quality_status = excluded.data_quality_status,
-        missing_fields = excluded.missing_fields
-"""
-
-PROCESS_DETAIL_SQL = """
-    insert into mart.procurement_process_details (
-        process_id, process_number, title, description, procurement_method,
-        process_status, source_status, publication_date, closing_date,
-        estimated_amount, currency_code
-    )
-    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    on conflict (process_id) do update set
+        missing_fields = excluded.missing_fields,
         process_number = excluded.process_number,
         title = excluded.title,
         description = excluded.description,
@@ -128,17 +120,18 @@ PROCESS_DETAIL_SQL = """
         publication_date = excluded.publication_date,
         closing_date = excluded.closing_date,
         estimated_amount = excluded.estimated_amount,
-        currency_code = excluded.currency_code
+        currency_code = excluded.currency_code,
+        raw_payload_hash = excluded.raw_payload_hash
 """
 
-BUYER_DETAIL_SQL = """
-    insert into mart.procurement_buyer_details (process_id, buyer_id)
+PROCESS_BUYER_SQL = """
+    insert into mart.process_buyers (process_id, buyer_id)
     values (%s, %s)
     on conflict (process_id, buyer_id) do nothing
 """
 
-ITEM_DETAIL_SQL = """
-    insert into mart.procurement_item_details (
+ITEM_SQL = """
+    insert into mart.items (
         item_id, process_id, source_item_id, line_number,
         item_description, category_source, category_normalised
     )
@@ -153,7 +146,7 @@ ITEM_DETAIL_SQL = """
 """
 
 AWARD_SQL = """
-    insert into mart.procurement_awards (
+    insert into mart.awards (
         award_id, process_id, source_award_id,
         award_date, awarded_amount, currency_code
     )
@@ -167,13 +160,13 @@ AWARD_SQL = """
 """
 
 AWARD_ITEM_SQL = """
-    insert into mart.procurement_award_items (award_id, item_id)
+    insert into mart.award_items (award_id, item_id)
     values (%s, %s)
     on conflict (award_id, item_id) do nothing
 """
 
 AWARD_SUPPLIER_SQL = """
-    insert into mart.procurement_award_suppliers (award_id, supplier_id)
+    insert into mart.award_suppliers (award_id, supplier_id)
     values (%s, %s)
     on conflict (award_id, supplier_id) do nothing
 """
@@ -299,7 +292,7 @@ class Database:
             )
             values (
                 %s,
-                (select count(*) from mart.procurement_record_core where country_code = %s),
+                (select count(*) from mart.processes where country_code = %s),
                 (select count(*) from mart.buyers where country_code = %s),
                 now()
             )
@@ -760,28 +753,11 @@ class Database:
         ]
         supplier_ids = self.resolve_supplier_ids(supplier_records)
 
-        process_rows = []
         item_rows = []
         award_rows = []
 
         for record in record_list:
             process_id = record["process_id"]
-            process_rows.append(
-                (
-                    process_id,
-                    record.get("process_number"),
-                    record.get("title"),
-                    record.get("description"),
-                    record.get("procurement_method"),
-                    record.get("process_status"),
-                    record.get("source_status"),
-                    record.get("publication_date"),
-                    record.get("closing_date"),
-                    record.get("estimated_amount"),
-                    record.get("currency_code"),
-                )
-            )
-
             for item in record.get("items") or []:
                 item_rows.append(
                     (
@@ -808,9 +784,8 @@ class Database:
                 )
 
         with self.conn.cursor() as cur:
-            cur.executemany(PROCESS_DETAIL_SQL, process_rows)
             cur.executemany(
-                "delete from mart.procurement_buyer_details where process_id = %s",
+                "delete from mart.process_buyers where process_id = %s",
                 [(record["process_id"],) for record in record_list],
             )
             buyer_rows = [
@@ -821,33 +796,33 @@ class Database:
                 if buyer_id is not None
             ]
             if buyer_rows:
-                cur.executemany(BUYER_DETAIL_SQL, buyer_rows)
+                cur.executemany(PROCESS_BUYER_SQL, buyer_rows)
             # Replace child rows and relationship sets so source corrections
             # cannot leave stale items, awards, or suppliers behind.
             cur.executemany(
-                """delete from mart.procurement_award_suppliers
+                """delete from mart.award_suppliers
                     where award_id in (
-                        select award_id from mart.procurement_awards where process_id = %s
+                        select award_id from mart.awards where process_id = %s
                     )""",
                 [(record["process_id"],) for record in record_list],
             )
             cur.executemany(
-                """delete from mart.procurement_award_items
+                """delete from mart.award_items
                     where award_id in (
-                        select award_id from mart.procurement_awards where process_id = %s
+                        select award_id from mart.awards where process_id = %s
                     )""",
                 [(record["process_id"],) for record in record_list],
             )
             cur.executemany(
-                "delete from mart.procurement_awards where process_id = %s",
+                "delete from mart.awards where process_id = %s",
                 [(record["process_id"],) for record in record_list],
             )
             cur.executemany(
-                "delete from mart.procurement_item_details where process_id = %s",
+                "delete from mart.items where process_id = %s",
                 [(record["process_id"],) for record in record_list],
             )
             if item_rows:
-                cur.executemany(ITEM_DETAIL_SQL, item_rows)
+                cur.executemany(ITEM_SQL, item_rows)
             if award_rows:
                 cur.executemany(AWARD_SQL, award_rows)
             award_item_rows = [

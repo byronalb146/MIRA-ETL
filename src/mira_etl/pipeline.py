@@ -234,7 +234,7 @@ def load_records(
     )
     insert_row_count(db, run_id, "audit", "validation_results", validations)
     inserted = db.upsert_mart_split_records(records)
-    insert_row_count(db, run_id, "mart", "procurement_record_core", inserted)
+    insert_row_count(db, run_id, "mart", "processes", inserted)
 
 
 def process_json_records(
@@ -302,7 +302,7 @@ def process_json_records(
     insert_row_count(db, run_id, "raw", "source_rows", totals["raw"])
     insert_row_count(db, run_id, "staging", "normalized_candidates", totals["staging"])
     insert_row_count(db, run_id, "audit", "validation_results", totals["validations"])
-    insert_row_count(db, run_id, "mart", "procurement_record_core", totals["mart"])
+    insert_row_count(db, run_id, "mart", "processes", totals["mart"])
 
 
 def build_json_record(

@@ -617,7 +617,7 @@ function renderRecords(records, showCountryTag) {
   }
 
   container.innerHTML = records.map(r => {
-    const detail = r.process_details || {};
+    const detail = r;
     const buyers = buyersForRecord(r);
     const buyerNames = buyers.map(buyer => buyer.name_normalised).filter(Boolean);
     const suppliers = suppliersForRecord(r);
@@ -683,7 +683,7 @@ async function main() {
   // registros que Nicaragua/Costa Rica). Esta consulta es liviana (una sola
   // columna, sin joins), así que puede traer bastantes filas sin problema.
   const { data: countryRows, error: countryError } = await supabase
-    .from("procurement_record_core")
+    .from("processes")
     .select("country_code")
     .limit(20000);
 
@@ -708,17 +708,16 @@ async function main() {
   // tenga garantizado su propio espacio en la lista en vez de competir por
   // un único límite combinado.
   const selectColumns = `
-    process_id, country_code,
-    process_details:procurement_process_details(process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, estimated_amount, currency_code),
-    buyer_details:procurement_buyer_details(buyer:buyers(name_normalised)),
-    awards:procurement_awards(award_date, awarded_amount, currency_code, award_suppliers:procurement_award_suppliers(supplier:suppliers(name_normalised, supplier_type))),
-    item_details:procurement_item_details(item_description, category_source, category_normalised)
+    process_id, country_code, process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, estimated_amount, currency_code,
+    buyer_details:process_buyers(buyer:buyers(name_normalised)),
+    awards:awards(award_date, awarded_amount, currency_code, award_suppliers:award_suppliers(supplier:suppliers(name_normalised, supplier_type))),
+    item_details:items(item_description, category_source, category_normalised)
   `;
 
   const perCountryResults = await Promise.all(
     [...liveCountries].map(code =>
       supabase
-        .from("procurement_record_core")
+        .from("processes")
         .select(selectColumns)
         .eq("country_code", code)
         .order("extracted_at", { ascending: false })
@@ -740,7 +739,7 @@ async function main() {
 
   document.getElementById("stat-countries").innerHTML = `${liveCountries.size}<span style="font-size:1.4rem;">/6</span>`;
 
-  const statusSet = new Set(allRecords.map(r => r.process_details?.process_status).filter(Boolean));
+  const statusSet = new Set(allRecords.map(r => r.process_status).filter(Boolean));
   const statusFilter = document.getElementById("status-filter");
   statusSet.forEach(s => {
     const opt = document.createElement("option");
@@ -761,7 +760,7 @@ async function main() {
     const q = document.getElementById("search").value.trim().toLowerCase();
     const status = statusFilter.value;
     const filtered = allRecords.filter(r => {
-      const detail = r.process_details || {};
+      const detail = r;
       const buyers = buyersForRecord(r);
       const suppliers = suppliersForRecord(r);
       const items = itemsForRecord(r);
@@ -863,10 +862,10 @@ async function mainPaginated() {
 
   const selectColumns = `
     process_id, country_code, source_record_id, source_system,
-    process_details:procurement_process_details!inner(process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, estimated_amount, currency_code),
-    buyer_details:procurement_buyer_details(buyer:buyers(name_normalised)),
-    awards:procurement_awards(award_date, awarded_amount, currency_code, award_suppliers:procurement_award_suppliers(supplier:suppliers(name_normalised, supplier_type))),
-    item_details:procurement_item_details(item_description, category_source, category_normalised)
+    process_number, title, description, procurement_method, process_status, source_status, publication_date, closing_date, estimated_amount, currency_code,
+    buyer_details:process_buyers(buyer:buyers(name_normalised)),
+    awards:awards(award_date, awarded_amount, currency_code, award_suppliers:award_suppliers(supplier:suppliers(name_normalised, supplier_type))),
+    item_details:items(item_description, category_source, category_normalised)
   `;
 
   const statusFilter = document.getElementById("status-filter");
@@ -887,10 +886,10 @@ async function mainPaginated() {
     const status = statusFilter.value;
     const pattern = searchPattern();
     let query = supabase
-      .from("procurement_record_core")
+      .from("processes")
       .select(selectColumns);
     if (selectedCountry) query = query.eq("country_code", selectedCountry);
-    if (status) query = query.eq("process_details.process_status", status);
+    if (status) query = query.eq("process_status", status);
     if (pattern) {
       query = query.or(
         `process_id.ilike.${pattern},source_record_id.ilike.${pattern},source_system.ilike.${pattern}`

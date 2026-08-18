@@ -69,8 +69,23 @@ create table if not exists staging.normalized_candidates (
     created_at timestamptz not null default now()
 );
 
-create table if not exists mart.procurement_record_core (
+create table if not exists mart.processes (
     process_id text primary key,
+    process_number text,
+    title text,
+    description text,
+    procurement_method text,
+    process_status text check (
+        process_status is null or process_status in (
+            'PLANNED', 'PUBLISHED', 'OPEN', 'EVALUATION', 'AWARDED',
+            'CONTRACTED', 'COMPLETED', 'CANCELLED', 'DESERTED', 'SUSPENDED'
+        )
+    ),
+    source_status text,
+    publication_date timestamptz,
+    closing_date timestamptz,
+    estimated_amount numeric,
+    currency_code text,
     country_code text not null,
     source_system text not null,
     source_record_id text not null,
@@ -92,28 +107,9 @@ create table if not exists mart.procurement_record_core (
     unique (source_system, source_record_id, raw_payload_hash)
 );
 
-create table if not exists mart.procurement_process_details (
-    process_id text primary key references mart.procurement_record_core(process_id),
-    process_number text,
-    title text,
-    description text,
-    procurement_method text,
-    process_status text check (
-        process_status is null or process_status in (
-            'PLANNED', 'PUBLISHED', 'OPEN', 'EVALUATION', 'AWARDED',
-            'CONTRACTED', 'COMPLETED', 'CANCELLED', 'DESERTED', 'SUSPENDED'
-        )
-    ),
-    source_status text,
-    publication_date timestamptz,
-    closing_date timestamptz,
-    estimated_amount numeric,
-    currency_code text
-);
-
-create table if not exists mart.procurement_item_details (
+create table if not exists mart.items (
     item_id text primary key,
-    process_id text not null references mart.procurement_record_core(process_id),
+    process_id text not null references mart.processes(process_id),
     source_item_id text,
     line_number text,
     item_description text,
@@ -167,31 +163,31 @@ create table if not exists mart.buyers (
 );
 
 -- A procurement process can be related to multiple buyers.
-create table if not exists mart.procurement_buyer_details (
-    process_id text not null references mart.procurement_record_core(process_id),
+create table if not exists mart.process_buyers (
+    process_id text not null references mart.processes(process_id),
     buyer_id bigint not null references mart.buyers(buyer_id),
     primary key (process_id, buyer_id)
 );
 
 -- Awards carry amounts once; suppliers and items attach through bridge tables
 -- so multi-supplier or multi-item awards do not duplicate monetary values.
-create table if not exists mart.procurement_awards (
+create table if not exists mart.awards (
     award_id text primary key,
-    process_id text not null references mart.procurement_record_core(process_id),
+    process_id text not null references mart.processes(process_id),
     source_award_id text,
     award_date timestamptz,
     awarded_amount numeric,
     currency_code text
 );
 
-create table if not exists mart.procurement_award_items (
-    award_id text not null references mart.procurement_awards(award_id),
-    item_id text not null references mart.procurement_item_details(item_id),
+create table if not exists mart.award_items (
+    award_id text not null references mart.awards(award_id),
+    item_id text not null references mart.items(item_id),
     primary key (award_id, item_id)
 );
 
-create table if not exists mart.procurement_award_suppliers (
-    award_id text not null references mart.procurement_awards(award_id),
+create table if not exists mart.award_suppliers (
+    award_id text not null references mart.awards(award_id),
     supplier_id bigint not null references mart.suppliers(supplier_id),
     primary key (award_id, supplier_id)
 );

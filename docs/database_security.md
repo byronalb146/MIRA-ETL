@@ -62,24 +62,23 @@ es temporal y debe retirarse cuando MIRA-WEB consulte únicamente MIRA-API.
 Ejemplo para una tabla:
 
 ```sql
-alter table mart.procurement_record_core enable row level security;
+alter table mart.processes enable row level security;
 grant usage on schema mart to anon, authenticated;
-grant select on mart.procurement_record_core to anon, authenticated;
+grant select on mart.processes to anon, authenticated;
 create policy "Public read access"
-    on mart.procurement_record_core
+    on mart.processes
     for select to anon, authenticated
     using (true);
 ```
 
 Aplicar el mismo patrón solamente a las tablas requeridas por el prototipo:
 
-- `procurement_record_core`
-- `procurement_process_details`
-- `procurement_buyer_details`
-- `procurement_item_details`
-- `procurement_awards`
-- `procurement_award_items`
-- `procurement_award_suppliers`
+- `processes`
+- `process_buyers`
+- `items`
+- `awards`
+- `award_items`
+- `award_suppliers`
 - `buyers`
 - `suppliers`
 - `web_country_stats`
@@ -90,8 +89,8 @@ Con `mira_query`:
 
 ```sql
 select * from query.v_process limit 1;       -- debe funcionar
-select * from mart.procurement_record_core;  -- debe fallar
+select * from mart.processes;  -- debe fallar
 ```
 
 Con `mira_logger`, una escritura en `analytics.query_log` debe funcionar y una
-lectura de `mart.procurement_record_core` debe fallar.
+lectura de `mart.processes` debe fallar.

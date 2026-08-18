@@ -1,7 +1,7 @@
 # Resolucion de entidades: proveedores y compradores
 
-`mart.procurement_buyer_details` relaciona procesos con compradores.
-`mart.procurement_award_suppliers` relaciona adjudicaciones con proveedores.
+`mart.process_buyers` relaciona procesos con compradores.
+`mart.award_suppliers` relaciona adjudicaciones con proveedores.
 Sus llaves compuestas permiten múltiples entidades sin repetir nombre,
 identificador fiscal ni identificador fuente.
 

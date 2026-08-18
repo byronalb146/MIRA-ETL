@@ -19,7 +19,7 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
             encoding="utf-8"
         )
-        body = create_table_body(sql, "mart.procurement_award_suppliers")
+        body = create_table_body(sql, "mart.award_suppliers")
         self.assertIsNotNone(body)
         self.assertRegex(
             body or "",
@@ -30,7 +30,7 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
             encoding="utf-8"
         )
-        body = create_table_body(sql, "mart.procurement_buyer_details")
+        body = create_table_body(sql, "mart.process_buyers")
         self.assertIsNotNone(body)
         self.assertRegex(
             body or "",
@@ -42,6 +42,16 @@ class DatabaseSchemaContractTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertNotRegex(sql, r"(?im)^\s*(alter|drop|delete|update|insert)\b")
+
+    def test_mart_uses_process_domain_names_without_redundant_prefixes(self) -> None:
+        sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("mart.procurement_", sql)
+        self.assertNotIn("mart.procurement_process_details", sql)
+        process_body = create_table_body(sql, "mart.processes") or ""
+        for column in ("title", "process_status", "estimated_amount"):
+            self.assertRegex(process_body, rf"\b{column}\b")
 
     def test_sql_declares_every_table_and_column_used_by_db(self) -> None:
         sql_dir = Path(__file__).parents[1] / "sql"
@@ -74,22 +84,22 @@ class DatabaseSchemaContractTest(unittest.TestCase):
     def test_reports_missing_table_and_column(self) -> None:
         actual = {table: set(columns) for table, columns in SCHEMA_CONTRACT.items()}
         del actual["mart.buyers"]
-        actual["mart.procurement_record_core"].remove("source_record_id")
+        actual["mart.processes"].remove("source_record_id")
 
         self.assertEqual(
             schema_mismatches(actual),
             [
-                "mart.procurement_record_core missing columns source_record_id",
+                "mart.processes missing columns source_record_id",
                 "missing table mart.buyers",
             ],
         )
 
     def test_reports_a_redundant_column(self) -> None:
         actual = {table: set(columns) for table, columns in SCHEMA_CONTRACT.items()}
-        actual["mart.procurement_buyer_details"].add("buyer_name")
+        actual["mart.process_buyers"].add("buyer_name")
         self.assertEqual(
             schema_mismatches(actual),
-            ["mart.procurement_buyer_details has unexpected columns buyer_name"],
+            ["mart.process_buyers has unexpected columns buyer_name"],
         )
 
 def all_sql_text() -> str:
