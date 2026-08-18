@@ -9,7 +9,7 @@ SQL_DIR = Path(__file__).parents[1] / "sql"
 
 class SemanticDictionaryEnumTest(unittest.TestCase):
     """query.semantic_dictionary hand-copies enum lists from CHECK
-    constraints (sql/013_semantic_dictionary.sql can't read pg_constraint at
+    constraints (sql/005_semantic_dictionary.sql can't read pg_constraint at
     migration time without duplicating logic elsewhere). This test is what
     keeps the copy honest: it fails the moment someone changes a CHECK
     constraint's allowed values without updating the dictionary to match."""
@@ -36,6 +36,14 @@ class SemanticDictionaryEnumTest(unittest.TestCase):
             check_column="supplier_type",
             dictionary_view="query.v_suppliers",
             dictionary_column="supplier_type",
+        )
+
+    def test_grain_matches_003_grain(self) -> None:
+        self.assert_enum_matches(
+            check_sql=read("003_grain.sql"),
+            check_column="grain",
+            dictionary_view="query.v_process",
+            dictionary_column="grain",
         )
 
     def assert_enum_matches(

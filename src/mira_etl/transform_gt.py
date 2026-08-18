@@ -201,6 +201,7 @@ def build_record(
         "connector_version": connector_version,
         "raw_payload": source_row,
         "raw_payload_hash": raw_payload_hash,
+        "grain": "PROCESS",
         "normalisation_status": "PROCESSED",
         "normalised_at": datetime.now(UTC),
         "data_quality_status": "PARTIAL",

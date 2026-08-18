@@ -93,6 +93,7 @@ def build_records(
             "connector_version": connector_version,
             "raw_payload": raw_payload,
             "raw_payload_hash": stable_json_hash(raw_payload),
+            "grain": "PROCESS",
             "normalisation_status": "PROCESSED",
             "normalised_at": datetime.now(UTC),
             "data_quality_status": "PARTIAL",
