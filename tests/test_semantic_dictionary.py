@@ -9,7 +9,7 @@ SQL_DIR = Path(__file__).parents[1] / "sql"
 
 class SemanticDictionaryEnumTest(unittest.TestCase):
     """query.semantic_dictionary hand-copies enum lists from CHECK
-    constraints (sql/013_semantic_dictionary.sql can't read pg_constraint at
+    constraints (sql/003_semantic_dictionary.sql can't read pg_constraint at
     migration time without duplicating logic elsewhere). This test is what
     keeps the copy honest: it fails the moment someone changes a CHECK
     constraint's allowed values without updating the dictionary to match."""
@@ -52,7 +52,7 @@ class SemanticDictionaryEnumTest(unittest.TestCase):
             f"could not find a CHECK ... in (...) constraint for {check_column}",
         )
         from_dictionary = extract_dictionary_enum(
-            read("013_semantic_dictionary.sql"), dictionary_view, dictionary_column
+            read("003_semantic_dictionary.sql"), dictionary_view, dictionary_column
         )
         self.assertTrue(
             from_dictionary,

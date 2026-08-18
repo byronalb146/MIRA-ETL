@@ -2,6 +2,8 @@ create schema if not exists raw;
 create schema if not exists staging;
 create schema if not exists mart;
 create schema if not exists audit;
+create schema if not exists query;
+create schema if not exists analytics;
 
 create table if not exists audit.etl_runs (
     id bigserial primary key,
@@ -120,9 +122,6 @@ create table if not exists mart.procurement_item_details (
     unique (process_id, source_item_id, line_number)
 );
 
-create index if not exists idx_procurement_items_process
-    on mart.procurement_item_details (process_id);
-
 create table if not exists audit.validation_results (
     validation_id bigserial primary key,
     run_id bigint not null references audit.etl_runs(id),
@@ -139,15 +138,6 @@ create table if not exists audit.validation_results (
     payload jsonb,
     created_at timestamptz not null default now()
 );
-
-create index if not exists idx_mart_record_core_country
-    on mart.procurement_record_core (country_code);
-
-create index if not exists idx_mart_record_core_country_process
-    on mart.procurement_record_core (country_code, process_id);
-
-create index if not exists idx_audit_validation_results_run
-    on audit.validation_results (run_id, severity, rule_code);
 
 -- Dimension tables resolve the same supplier or buyer across procurement
 -- processes to one stable entity. See docs/entity_matching.md.
@@ -194,9 +184,6 @@ create table if not exists mart.procurement_awards (
     currency_code text
 );
 
-create index if not exists idx_procurement_awards_process
-    on mart.procurement_awards (process_id);
-
 create table if not exists mart.procurement_award_items (
     award_id text not null references mart.procurement_awards(award_id),
     item_id text not null references mart.procurement_item_details(item_id),
@@ -209,15 +196,6 @@ create table if not exists mart.procurement_award_suppliers (
     primary key (award_id, supplier_id)
 );
 
-create index if not exists idx_award_suppliers_supplier
-    on mart.procurement_award_suppliers (supplier_id);
-
-create index if not exists idx_buyer_details_buyer_id
-    on mart.procurement_buyer_details (buyer_id);
-
-create index if not exists idx_buyers_country
-    on mart.buyers (country_code);
-
 -- Small, exact summary consumed by the public website. It is refreshed by
 -- the ETL after every successful country load, so browsers never COUNT the
 -- large mart tables directly.
@@ -226,4 +204,61 @@ create table if not exists mart.web_country_stats (
     process_count bigint not null,
     buyer_count bigint not null,
     refreshed_at timestamptz not null default now()
+);
+
+-- MIRA-API interaction log. One parent row holds the question and final/raw
+-- response; SQL generation retries are stored in query_attempt below.
+create table if not exists analytics.query_log (
+    id bigserial primary key,
+    created_at timestamptz not null default now(),
+    subject_key text not null,
+    question_text text not null,
+    response_text text,
+    model_response_raw jsonb,
+    outcome text not null check (outcome in (
+        'OK', 'OK_ZERO_ROWS', 'OK_DEGRADED_NARRATIVE',
+        'OUT_OF_SCOPE', 'REJECTED_ENTITY_NOT_FOUND', 'REJECTED_ENTITY_AMBIGUOUS',
+        'REJECTED_SQL_PARSE', 'REJECTED_SQL_NOT_SELECT', 'REJECTED_SQL_RELATION',
+        'REJECTED_SQL_FUNCTION', 'REJECTED_SQL_COST',
+        'FAILED_DB_TIMEOUT', 'FAILED_DB_ERROR', 'FAILED_LLM_ERROR',
+        'THROTTLED_QUOTA', 'THROTTLED_BUDGET'
+    )),
+    attempt_count int not null default 1,
+    total_latency_ms int,
+    prompt_version text,
+    app_version text,
+    model_used text
+);
+
+create table if not exists analytics.query_attempt (
+    id bigserial primary key,
+    query_log_id bigint not null references analytics.query_log(id),
+    attempt_number int not null,
+    generated_sql text,
+    outcome text not null check (outcome in (
+        'OK', 'OK_ZERO_ROWS', 'OK_DEGRADED_NARRATIVE',
+        'OUT_OF_SCOPE', 'REJECTED_ENTITY_NOT_FOUND', 'REJECTED_ENTITY_AMBIGUOUS',
+        'REJECTED_SQL_PARSE', 'REJECTED_SQL_NOT_SELECT', 'REJECTED_SQL_RELATION',
+        'REJECTED_SQL_FUNCTION', 'REJECTED_SQL_COST',
+        'FAILED_DB_TIMEOUT', 'FAILED_DB_ERROR', 'FAILED_LLM_ERROR',
+        'THROTTLED_QUOTA', 'THROTTLED_BUDGET'
+    )),
+    rejection_rule text,
+    rejection_detail text,
+    row_count int,
+    latency_ms int,
+    created_at timestamptz not null default now(),
+    unique (query_log_id, attempt_number)
+);
+
+-- Runtime quota state. Its primary key is the only index needed by the API's
+-- read/update path; analytics log tables intentionally have no extra indexes.
+create table if not exists analytics.quota_counters (
+    subject_key text not null,
+    period_type text not null check (period_type in ('DAY', 'MONTH')),
+    period_key text not null,
+    query_count int not null default 0,
+    spent_usd numeric not null default 0,
+    updated_at timestamptz not null default now(),
+    primary key (subject_key, period_type, period_key)
 );
