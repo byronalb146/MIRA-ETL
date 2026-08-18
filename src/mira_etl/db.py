@@ -45,30 +45,37 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
         "source_url", "extracted_at", "source_last_modified_at",
         "connector_version", "raw_payload", "raw_payload_hash",
         "normalisation_status", "normalised_at", "data_quality_status",
-        "missing_fields", "grain",
+        "missing_fields",
     },
     "mart.procurement_process_details": {
         "process_id", "process_number", "title", "description",
         "procurement_method", "process_status", "source_status",
-        "publication_date", "closing_date", "award_date", "estimated_amount",
-        "awarded_amount", "currency_code",
+        "publication_date", "closing_date", "estimated_amount", "currency_code",
     },
     "mart.procurement_buyer_details": {
         "process_id", "buyer_id",
     },
-    "mart.procurement_supplier_details": {
-        "process_id", "supplier_id",
-    },
     "mart.procurement_item_details": {
-        "process_id", "item_description", "category_source", "category_normalised",
+        "item_id", "process_id", "source_item_id", "line_number",
+        "item_description", "category_source", "category_normalised",
+    },
+    "mart.procurement_awards": {
+        "award_id", "process_id", "source_award_id", "award_date",
+        "awarded_amount", "currency_code",
+    },
+    "mart.procurement_award_items": {
+        "award_id", "item_id",
+    },
+    "mart.procurement_award_suppliers": {
+        "award_id", "supplier_id",
     },
     "mart.suppliers": {
         "supplier_id", "country_code", "source_system", "supplier_tax_id",
-        "supplier_id_source", "name_normalised", "display_name", "supplier_type",
+        "supplier_id_source", "name_normalised", "supplier_type",
     },
     "mart.buyers": {
         "buyer_id", "country_code", "source_system", "buyer_tax_id",
-        "buyer_id_source", "name_normalised", "display_name",
+        "buyer_id_source", "name_normalised",
     },
     "mart.web_country_stats": {
         "country_code", "process_count", "buyer_count", "refreshed_at",
@@ -81,13 +88,13 @@ CORE_SQL = """
         process_id, country_code, source_system, source_record_id, source_url,
         extracted_at, source_last_modified_at, connector_version,
         raw_payload, raw_payload_hash, normalisation_status, normalised_at,
-        data_quality_status, missing_fields, grain
+        data_quality_status, missing_fields
     )
     values (
         %(process_id)s, %(country_code)s, %(source_system)s, %(source_record_id)s, %(source_url)s,
         %(extracted_at)s, %(source_last_modified_at)s, %(connector_version)s,
         %(raw_payload)s::jsonb, %(raw_payload_hash)s, %(normalisation_status)s, %(normalised_at)s,
-        %(data_quality_status)s, %(missing_fields)s::jsonb, %(grain)s
+        %(data_quality_status)s, %(missing_fields)s::jsonb
     )
     on conflict (process_id)
     do update set
@@ -102,17 +109,16 @@ CORE_SQL = """
         normalisation_status = excluded.normalisation_status,
         normalised_at = excluded.normalised_at,
         data_quality_status = excluded.data_quality_status,
-        missing_fields = excluded.missing_fields,
-        grain = excluded.grain
+        missing_fields = excluded.missing_fields
 """
 
 PROCESS_DETAIL_SQL = """
     insert into mart.procurement_process_details (
         process_id, process_number, title, description, procurement_method,
         process_status, source_status, publication_date, closing_date,
-        award_date, estimated_amount, awarded_amount, currency_code
+        estimated_amount, currency_code
     )
-    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     on conflict (process_id) do update set
         process_number = excluded.process_number,
         title = excluded.title,
@@ -122,9 +128,7 @@ PROCESS_DETAIL_SQL = """
         source_status = excluded.source_status,
         publication_date = excluded.publication_date,
         closing_date = excluded.closing_date,
-        award_date = excluded.award_date,
         estimated_amount = excluded.estimated_amount,
-        awarded_amount = excluded.awarded_amount,
         currency_code = excluded.currency_code
 """
 
@@ -134,21 +138,45 @@ BUYER_DETAIL_SQL = """
     on conflict (process_id, buyer_id) do nothing
 """
 
-SUPPLIER_DETAIL_SQL = """
-    insert into mart.procurement_supplier_details (process_id, supplier_id)
-    values (%s, %s)
-    on conflict (process_id, supplier_id) do nothing
-"""
-
 ITEM_DETAIL_SQL = """
     insert into mart.procurement_item_details (
-        process_id, item_description, category_source, category_normalised
+        item_id, process_id, source_item_id, line_number,
+        item_description, category_source, category_normalised
     )
-    values (%s, %s, %s, %s)
-    on conflict (process_id) do update set
+    values (%s, %s, %s, %s, %s, %s, %s)
+    on conflict (item_id) do update set
+        process_id = excluded.process_id,
+        source_item_id = excluded.source_item_id,
+        line_number = excluded.line_number,
         item_description = excluded.item_description,
         category_source = excluded.category_source,
         category_normalised = excluded.category_normalised
+"""
+
+AWARD_SQL = """
+    insert into mart.procurement_awards (
+        award_id, process_id, source_award_id,
+        award_date, awarded_amount, currency_code
+    )
+    values (%s, %s, %s, %s, %s, %s)
+    on conflict (award_id) do update set
+        process_id = excluded.process_id,
+        source_award_id = excluded.source_award_id,
+        award_date = excluded.award_date,
+        awarded_amount = excluded.awarded_amount,
+        currency_code = excluded.currency_code
+"""
+
+AWARD_ITEM_SQL = """
+    insert into mart.procurement_award_items (award_id, item_id)
+    values (%s, %s)
+    on conflict (award_id, item_id) do nothing
+"""
+
+AWARD_SUPPLIER_SQL = """
+    insert into mart.procurement_award_suppliers (award_id, supplier_id)
+    values (%s, %s)
+    on conflict (award_id, supplier_id) do nothing
 """
 
 
@@ -735,6 +763,7 @@ class Database:
 
         process_rows = []
         item_rows = []
+        award_rows = []
 
         for record in record_list:
             process_id = record["process_id"]
@@ -749,21 +778,35 @@ class Database:
                     record.get("source_status"),
                     record.get("publication_date"),
                     record.get("closing_date"),
-                    record.get("award_date"),
                     record.get("estimated_amount"),
-                    record.get("awarded_amount"),
                     record.get("currency_code"),
                 )
             )
 
-            item_rows.append(
-                (
-                    process_id,
-                    record.get("item_description"),
-                    record.get("category_source"),
-                    record.get("category_normalised"),
+            for item in record.get("items") or []:
+                item_rows.append(
+                    (
+                        item["item_id"],
+                        process_id,
+                        item.get("source_item_id"),
+                        item.get("line_number"),
+                        item.get("item_description"),
+                        item.get("category_source"),
+                        item.get("category_normalised"),
+                    )
                 )
-            )
+
+            for award in record.get("awards") or []:
+                award_rows.append(
+                    (
+                        award["award_id"],
+                        process_id,
+                        award.get("source_award_id"),
+                        award.get("award_date"),
+                        award.get("awarded_amount"),
+                        award.get("currency_code"),
+                    )
+                )
 
         with self.conn.cursor() as cur:
             cur.executemany(PROCESS_DETAIL_SQL, process_rows)
@@ -780,53 +823,77 @@ class Database:
             ]
             if buyer_rows:
                 cur.executemany(BUYER_DETAIL_SQL, buyer_rows)
-            # Replace the relationship set for the processes in this batch so
-            # a source correction cannot leave stale supplier links behind.
+            # Replace child rows and relationship sets so source corrections
+            # cannot leave stale items, awards, or suppliers behind.
             cur.executemany(
-                "delete from mart.procurement_supplier_details where process_id = %s",
+                """delete from mart.procurement_award_suppliers
+                    where award_id in (
+                        select award_id from mart.procurement_awards where process_id = %s
+                    )""",
                 [(record["process_id"],) for record in record_list],
             )
-            supplier_rows = [
-                (supplier_record["process_id"], supplier_id)
+            cur.executemany(
+                """delete from mart.procurement_award_items
+                    where award_id in (
+                        select award_id from mart.procurement_awards where process_id = %s
+                    )""",
+                [(record["process_id"],) for record in record_list],
+            )
+            cur.executemany(
+                "delete from mart.procurement_awards where process_id = %s",
+                [(record["process_id"],) for record in record_list],
+            )
+            cur.executemany(
+                "delete from mart.procurement_item_details where process_id = %s",
+                [(record["process_id"],) for record in record_list],
+            )
+            if item_rows:
+                cur.executemany(ITEM_DETAIL_SQL, item_rows)
+            if award_rows:
+                cur.executemany(AWARD_SQL, award_rows)
+            award_item_rows = [
+                (award["award_id"], item_id)
+                for record in record_list
+                for award in record.get("awards") or []
+                for item_id in award.get("item_ids") or []
+            ]
+            if award_item_rows:
+                cur.executemany(AWARD_ITEM_SQL, award_item_rows)
+            award_supplier_rows = [
+                (supplier_record["award_id"], supplier_id)
                 for supplier_record, supplier_id in zip(
                     supplier_records, supplier_ids, strict=True
                 )
-                if supplier_id is not None
+                if supplier_id is not None and supplier_record.get("award_id")
             ]
-            if supplier_rows:
-                cur.executemany(SUPPLIER_DETAIL_SQL, supplier_rows)
-            cur.executemany(ITEM_DETAIL_SQL, item_rows)
+            if award_supplier_rows:
+                cur.executemany(AWARD_SUPPLIER_SQL, award_supplier_rows)
 
         return len(record_list)
 
     def resolve_buyer_ids(self, records: list[dict[str, Any]]) -> list[int | None]:
         rows = self.fetch_all("select * from mart.buyers")
         tax, source, name = entity_indexes(rows, "buyer")
-        existing_display = {int(row["buyer_id"]): row.get("display_name") for row in rows}
         pending: list[tuple[Any, ...]] = []
         markers: list[int | None] = []
-        display_updates: dict[int, str] = {}
 
         for record in records:
             country = record["country_code"]
             source_system = record["source_system"]
             tax_id = record.get("buyer_tax_id")
             source_id = record.get("buyer_id_source")
-            raw_name = record.get("buyer_name")
-            normalised = normalise_name(raw_name)
+            normalised = normalise_name(record.get("buyer_name"))
             entity_id = first_entity_id(
                 country, source_system, tax_id, source_id, normalised,
                 tax, source, name,
             )
             if entity_id is None and (tax_id or source_id or normalised):
                 entity_id = -(len(pending) + 1)
-                pending.append((country, source_system, tax_id, source_id, normalised, raw_name))
+                pending.append((country, source_system, tax_id, source_id, normalised))
                 index_entity(
                     entity_id, country, source_system, tax_id, source_id,
                     normalised, tax, source, name,
                 )
-            elif entity_id and entity_id > 0 and raw_name and not existing_display.get(entity_id):
-                display_updates.setdefault(entity_id, raw_name)
             markers.append(entity_id)
 
         if pending:
@@ -834,8 +901,8 @@ class Database:
                 cur.executemany(
                     """insert into mart.buyers
                        (country_code, source_system, buyer_tax_id,
-                        buyer_id_source, name_normalised, display_name)
-                       values (%s, %s, %s, %s, %s, %s)""",
+                        buyer_id_source, name_normalised)
+                       values (%s, %s, %s, %s, %s)""",
                     pending,
                 )
             rows = self.fetch_all("select * from mart.buyers")
@@ -849,28 +916,20 @@ class Database:
                 for record in records
             ]
 
-        if display_updates:
-            self._fill_display_names("mart.buyers", "buyer_id", display_updates)
-
         return markers
 
     def resolve_supplier_ids(self, records: list[dict[str, Any]]) -> list[int | None]:
         rows = self.fetch_all("select * from mart.suppliers")
         tax, source, name = entity_indexes(rows, "supplier")
-        existing_display = {
-            int(row["supplier_id"]): row.get("display_name") for row in rows
-        }
         pending: list[tuple[Any, ...]] = []
         markers: list[int | None] = []
-        display_updates: dict[int, str] = {}
 
         for record in records:
             country = record["country_code"]
             source_system = record["source_system"]
             tax_id = record.get("supplier_tax_id")
             source_id = record.get("supplier_id_source")
-            raw_name = record.get("supplier_name")
-            normalised = normalise_name(raw_name)
+            normalised = normalise_name(record.get("supplier_name"))
             entity_id = first_entity_id(
                 country, source_system, tax_id, source_id, normalised,
                 tax, source, name,
@@ -879,14 +938,12 @@ class Database:
                 entity_id = -(len(pending) + 1)
                 pending.append(
                     (country, source_system, tax_id, source_id, normalised,
-                     record.get("supplier_type"), raw_name)
+                     record.get("supplier_type"))
                 )
                 index_entity(
                     entity_id, country, source_system, tax_id, source_id,
                     normalised, tax, source, name,
                 )
-            elif entity_id and entity_id > 0 and raw_name and not existing_display.get(entity_id):
-                display_updates.setdefault(entity_id, raw_name)
             markers.append(entity_id)
 
         if pending:
@@ -894,8 +951,8 @@ class Database:
                 cur.executemany(
                     """insert into mart.suppliers
                        (country_code, source_system, supplier_tax_id,
-                        supplier_id_source, name_normalised, supplier_type, display_name)
-                       values (%s, %s, %s, %s, %s, %s, %s)""",
+                        supplier_id_source, name_normalised, supplier_type)
+                       values (%s, %s, %s, %s, %s, %s)""",
                     pending,
                 )
             rows = self.fetch_all("select * from mart.suppliers")
@@ -909,23 +966,7 @@ class Database:
                 for record in records
             ]
 
-        if display_updates:
-            self._fill_display_names("mart.suppliers", "supplier_id", display_updates)
-
         return markers
-
-    def _fill_display_names(
-        self, table: str, id_column: str, display_updates: dict[int, str],
-    ) -> None:
-        """Backfills display_name for entities matched to an existing row that
-        does not have one yet. Never overwrites a display_name already set."""
-        with self.conn.cursor() as cur:
-            cur.executemany(
-                f"""update {table}
-                       set display_name = coalesce(display_name, %s)
-                     where {id_column} = %s""",
-                [(display_name, entity_id) for entity_id, display_name in display_updates.items()],
-            )
 
     def upsert_record_core_batch(self, records: list[dict[str, Any]]) -> None:
         rows = [
@@ -939,89 +980,6 @@ class Database:
         with self.conn.cursor() as cur:
             cur.executemany(CORE_SQL, rows)
 
-    def backfill_display_names_from_staging(self, batch_size: int = 2000) -> dict[str, int]:
-        """Fills display_name for buyer/supplier rows created before that column
-        existed, by replaying the already-loaded staging.normalized_candidates
-        payloads through the same entity-matching indexes used at load time.
-
-        Reads from staging rather than mart.procurement_record_core.raw_payload
-        so it never re-derives buyer_name/supplier_name from raw source JSON --
-        that extraction already happened once per connector, and staging is
-        where its result was recorded (see pipeline.load_records)."""
-        updated = {"buyers": 0, "suppliers": 0}
-        last_id = 0
-        while True:
-            rows = self.fetch_all(
-                """select candidate_id, payload from staging.normalized_candidates
-                    where candidate_id > %s
-                    order by candidate_id
-                    limit %s""",
-                (last_id, batch_size),
-            )
-            if not rows:
-                break
-            last_id = rows[-1]["candidate_id"]
-            records = [row["payload"] for row in rows]
-
-            buyer_records = [
-                buyer_record
-                for record in records
-                for buyer_record in buyer_records_for(record)
-            ]
-            if buyer_records:
-                updated["buyers"] += self._backfill_display_names(
-                    buyer_records, "mart.buyers", "buyer_id", "buyer"
-                )
-
-            supplier_records = [
-                supplier_record
-                for record in records
-                for supplier_record in supplier_records_for(record)
-            ]
-            if supplier_records:
-                updated["suppliers"] += self._backfill_display_names(
-                    supplier_records, "mart.suppliers", "supplier_id", "supplier"
-                )
-
-        return updated
-
-    def _backfill_display_names(
-        self,
-        records: list[dict[str, Any]],
-        table: str,
-        id_column: str,
-        prefix: str,
-    ) -> int:
-        rows = self.fetch_all(f"select * from {table}")
-        tax, source, name = entity_indexes(rows, prefix)
-        existing_display = {int(row[id_column]): row.get("display_name") for row in rows}
-        display_updates: dict[int, str] = {}
-
-        tax_field = f"{prefix}_tax_id"
-        source_field = f"{prefix}_id_source"
-        name_field = f"{prefix}_name"
-
-        for record in records:
-            country = record.get("country_code")
-            source_system = record.get("source_system")
-            if not country or not source_system:
-                continue
-            tax_id = record.get(tax_field)
-            source_id = record.get(source_field)
-            raw_name = record.get(name_field)
-            normalised = normalise_name(raw_name)
-            entity_id = first_entity_id(
-                country, source_system, tax_id, source_id, normalised,
-                tax, source, name,
-            )
-            if entity_id and raw_name and not existing_display.get(entity_id):
-                display_updates.setdefault(entity_id, raw_name)
-
-        if display_updates:
-            self._fill_display_names(table, id_column, display_updates)
-        return len(display_updates)
-
-
 def ensure_sslmode(dsn: str) -> str:
     if "sslmode=" in dsn:
         return dsn
@@ -1030,11 +988,28 @@ def ensure_sslmode(dsn: str) -> str:
 
 
 def supplier_records_for(record: dict[str, Any]) -> list[dict[str, Any]]:
-    """Expand a process into the supplier candidates linked to it.
+    """Expand award suppliers into entity-matching candidates.
 
-    New transforms provide ``suppliers`` as a list. The scalar fields remain
-    supported for sources that naturally emit one supplier per source row.
+    Each returned row retains award_id so the resolved supplier can be linked
+    to the correct award without duplicating the award amount.
     """
+    awards = record.get("awards")
+    if awards is not None:
+        expanded: list[dict[str, Any]] = []
+        for award in awards:
+            if not isinstance(award, dict):
+                continue
+            for supplier in award.get("suppliers") or []:
+                if not isinstance(supplier, dict):
+                    continue
+                candidate = {**record, **supplier, "award_id": award.get("award_id")}
+                if any(
+                    candidate.get(field)
+                    for field in ("supplier_tax_id", "supplier_id_source", "supplier_name")
+                ):
+                    expanded.append(candidate)
+        return expanded
+
     suppliers = record.get("suppliers")
     if suppliers is None:
         if not any(

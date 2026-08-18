@@ -21,13 +21,13 @@ class MultiplePartiesTest(unittest.TestCase):
                 "buyer": {"id": "GT-NIT-1", "name": "Comprador"},
                 "tender": {"id": "NOG-1", "title": "Compra"},
                 "awards": [
-                    {"suppliers": [
+                    {"id": "AWARD-1", "suppliers": [
                         {"id": "GT-NIT-10", "name": "Proveedor A"},
                         {"id": "GT-NIT-20", "name": "Proveedor B"},
                     ]}
                 ],
                 "contracts": [
-                    {"suppliers": [
+                    {"awardID": "AWARD-1", "suppliers": [
                         {"id": "GT-NIT-20", "name": "Proveedor B"},
                         {"id": "GT-NIT-30", "name": "Proveedor C"},
                     ]}
@@ -43,7 +43,7 @@ class MultiplePartiesTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            [supplier["supplier_name"] for supplier in record["suppliers"]],
+            [supplier["supplier_name"] for supplier in record["awards"][0]["suppliers"]],
             ["Proveedor A", "Proveedor B", "Proveedor C"],
         )
         self.assertEqual(

@@ -11,6 +11,8 @@ create table if not exists analytics.query_log (
     created_at timestamptz not null default now(),
     subject_key text not null,
     question_text text not null,
+    response_text text,
+    model_response_raw jsonb,
     outcome text not null check (outcome in (
         'OK', 'OK_ZERO_ROWS', 'OK_DEGRADED_NARRATIVE',
         'OUT_OF_SCOPE', 'REJECTED_ENTITY_NOT_FOUND', 'REJECTED_ENTITY_AMBIGUOUS',
@@ -25,6 +27,15 @@ create table if not exists analytics.query_log (
     app_version text,
     model_used text
 );
+
+-- Development environments may already have the earlier table shape.
+alter table analytics.query_log
+    add column if not exists response_text text;
+alter table analytics.query_log
+    add column if not exists model_response_raw jsonb;
+
+drop table if exists analytics.query_feedback;
+drop table if exists analytics.response_cache;
 
 create index if not exists idx_query_log_created_at on analytics.query_log (created_at);
 create index if not exists idx_query_log_outcome on analytics.query_log (outcome);
@@ -56,29 +67,6 @@ create table if not exists analytics.query_attempt (
 );
 
 create index if not exists idx_query_attempt_outcome on analytics.query_attempt (outcome);
-
-create table if not exists analytics.query_feedback (
-    id bigserial primary key,
-    query_log_id bigint not null references analytics.query_log(id),
-    rating text not null check (rating in ('UP', 'DOWN')),
-    comment text,
-    created_at timestamptz not null default now()
-);
-
--- Cache is keyed by a hash of (normalised question, data_version) computed
--- by MIRA-API; response_payload is what got shown to the user, so a cache
--- hit never re-runs the SQL generator or the validator.
-create table if not exists analytics.response_cache (
-    cache_key text primary key,
-    question_normalised text not null,
-    generated_sql text,
-    response_payload jsonb not null,
-    data_version text not null,
-    created_at timestamptz not null default now(),
-    expires_at timestamptz
-);
-
-create index if not exists idx_response_cache_expires_at on analytics.response_cache (expires_at);
 
 -- Tracks both per-subject quota (subject_key = token or IP-prefix) and the
 -- global budget circuit breaker (subject_key = '__global__'), so the two

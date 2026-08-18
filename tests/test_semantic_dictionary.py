@@ -38,14 +38,6 @@ class SemanticDictionaryEnumTest(unittest.TestCase):
             dictionary_column="supplier_type",
         )
 
-    def test_grain_matches_005_grain(self) -> None:
-        self.assert_enum_matches(
-            check_sql=read("005_grain.sql"),
-            check_column="grain",
-            dictionary_view="query.v_process",
-            dictionary_column="grain",
-        )
-
     def assert_enum_matches(
         self,
         *,

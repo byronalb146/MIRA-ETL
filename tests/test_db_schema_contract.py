@@ -15,15 +15,15 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         )
         self.assertIsNone(entity_id)
 
-    def test_supplier_relationship_has_composite_primary_key(self) -> None:
+    def test_award_supplier_relationship_has_composite_primary_key(self) -> None:
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
             encoding="utf-8"
         )
-        body = create_table_body(sql, "mart.procurement_supplier_details")
+        body = create_table_body(sql, "mart.procurement_award_suppliers")
         self.assertIsNotNone(body)
         self.assertRegex(
             body or "",
-            r"primary\s+key\s*\(\s*process_id\s*,\s*supplier_id\s*\)",
+            r"primary\s+key\s*\(\s*award_id\s*,\s*supplier_id\s*\)",
         )
 
     def test_buyer_relationship_has_composite_primary_key(self) -> None:
@@ -44,11 +44,8 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         self.assertNotRegex(sql, r"(?im)^\s*(alter|drop|delete|update|insert)\b")
 
     def test_sql_declares_every_table_and_column_used_by_db(self) -> None:
-        # New columns land in their own numbered migration file (see
-        # sql/003_display_name.sql, sql/005_grain.sql) rather than editing
-        # 001_init.sql, which test_initial_schema_contains_no_historical_migrations
-        # keeps CREATE-only. So the contract check reads every sql/*.sql file,
-        # not just the first one.
+        # The contract check reads every sql/*.sql file so future schema
+        # additions can live outside the initial CREATE-only definition.
         sql = all_sql_text()
         for table, columns in SCHEMA_CONTRACT.items():
             body = create_table_body(sql, table)

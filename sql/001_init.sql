@@ -105,18 +105,23 @@ create table if not exists mart.procurement_process_details (
     source_status text,
     publication_date timestamptz,
     closing_date timestamptz,
-    award_date timestamptz,
     estimated_amount numeric,
-    awarded_amount numeric,
     currency_code text
 );
 
 create table if not exists mart.procurement_item_details (
-    process_id text primary key references mart.procurement_record_core(process_id),
+    item_id text primary key,
+    process_id text not null references mart.procurement_record_core(process_id),
+    source_item_id text,
+    line_number text,
     item_description text,
     category_source text,
-    category_normalised text
+    category_normalised text,
+    unique (process_id, source_item_id, line_number)
 );
+
+create index if not exists idx_procurement_items_process
+    on mart.procurement_item_details (process_id);
 
 create table if not exists audit.validation_results (
     validation_id bigserial primary key,
@@ -171,22 +176,41 @@ create table if not exists mart.buyers (
     name_normalised text
 );
 
--- A procurement process/adjudication can be related to multiple buyers.
+-- A procurement process can be related to multiple buyers.
 create table if not exists mart.procurement_buyer_details (
     process_id text not null references mart.procurement_record_core(process_id),
     buyer_id bigint not null references mart.buyers(buyer_id),
     primary key (process_id, buyer_id)
 );
 
--- A procurement process/adjudication can be related to multiple suppliers.
-create table if not exists mart.procurement_supplier_details (
+-- Awards carry amounts once; suppliers and items attach through bridge tables
+-- so multi-supplier or multi-item awards do not duplicate monetary values.
+create table if not exists mart.procurement_awards (
+    award_id text primary key,
     process_id text not null references mart.procurement_record_core(process_id),
-    supplier_id bigint not null references mart.suppliers(supplier_id),
-    primary key (process_id, supplier_id)
+    source_award_id text,
+    award_date timestamptz,
+    awarded_amount numeric,
+    currency_code text
 );
 
-create index if not exists idx_supplier_details_supplier_id
-    on mart.procurement_supplier_details (supplier_id);
+create index if not exists idx_procurement_awards_process
+    on mart.procurement_awards (process_id);
+
+create table if not exists mart.procurement_award_items (
+    award_id text not null references mart.procurement_awards(award_id),
+    item_id text not null references mart.procurement_item_details(item_id),
+    primary key (award_id, item_id)
+);
+
+create table if not exists mart.procurement_award_suppliers (
+    award_id text not null references mart.procurement_awards(award_id),
+    supplier_id bigint not null references mart.suppliers(supplier_id),
+    primary key (award_id, supplier_id)
+);
+
+create index if not exists idx_award_suppliers_supplier
+    on mart.procurement_award_suppliers (supplier_id);
 
 create index if not exists idx_buyer_details_buyer_id
     on mart.procurement_buyer_details (buyer_id);
