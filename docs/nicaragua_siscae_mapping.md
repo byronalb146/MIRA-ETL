@@ -74,14 +74,14 @@ esta version -- son procesos que, por definicion, aun no tienen adjudicacion.
 | Contratacion | `source_status` | Bloque de detalle, etiqueta "Estado:" | Valor original de la fuente, sin normalizar | `mart.procurement_process_details.source_status` |
 | Fechas | `publication_date` | Bloque de detalle, etiqueta "Publicacion:" | Parseo a `timestamptz` | `mart.procurement_process_details.publication_date` |
 | Fechas | `closing_date` | Bloque de detalle, etiqueta "Cierre:" | Parseo a `timestamptz` | `mart.procurement_process_details.closing_date` |
-| Fechas | `award_date` | No aplica (proceso vigente, aun sin adjudicar) | `NULL` | `mart.procurement_process_details.award_date` |
+| Fechas | `award_date` | No aplica (proceso vigente, aun sin adjudicar) | No crea adjudicacion | `mart.procurement_awards.award_date` |
 | Montos | `estimated_amount` | No expuesto en ningun punto de la fuente revisado | `NULL` | `mart.procurement_process_details.estimated_amount` |
-| Montos | `awarded_amount` | No aplica en esta version del conector (ver "Alcance") | `NULL` | `mart.procurement_process_details.awarded_amount` |
+| Montos | `awarded_amount` | No aplica en esta version del conector (ver "Alcance") | No crea adjudicacion | `mart.procurement_awards.awarded_amount` |
 | Montos | `currency_code` | No aplica en esta version del conector | `NULL` | `mart.procurement_process_details.currency_code` |
 | Proveedor | `supplier_name` | No aplica en esta version del conector | `NULL` | `mart.suppliers.name_normalised` |
 | Proveedor | `supplier_id_source` | No aplica en esta version del conector | `NULL` | `mart.suppliers.supplier_id_source` |
 | Proveedor | `supplier_tax_id` | No aplica en esta version del conector | `NULL` | `mart.suppliers.supplier_tax_id` |
-| Proveedor | `supplier_type` | No existe ningun campo nativo en la fuente | `NULL` | `mart.procurement_supplier_details.supplier_type` |
+| Proveedor | `supplier_type` | No existe ningun campo nativo en la fuente | `NULL` | `mart.suppliers.supplier_type` |
 | Bien o servicio | `item_description` | Igual que `description` -- no hay desglose de items individuales | Copia directa | `mart.procurement_item_details.item_description` |
 | Bien o servicio | `category_source` | Bloque de detalle, fragmentos `"texto (codigo de 8 digitos)"`, tipo UNSPSC | Union de todos los codigos encontrados, separados por `; ` | `mart.procurement_item_details.category_source` |
 | Bien o servicio | `category_normalised` | No disponible todavia | `NULL` hasta definir catalogo regional MIRA | `mart.procurement_item_details.category_normalised` |

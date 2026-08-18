@@ -50,17 +50,24 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
     "mart.procurement_process_details": {
         "process_id", "process_number", "title", "description",
         "procurement_method", "process_status", "source_status",
-        "publication_date", "closing_date", "award_date", "estimated_amount",
-        "awarded_amount", "currency_code",
+        "publication_date", "closing_date", "estimated_amount", "currency_code",
     },
     "mart.procurement_buyer_details": {
         "process_id", "buyer_id",
     },
-    "mart.procurement_supplier_details": {
-        "process_id", "supplier_id",
-    },
     "mart.procurement_item_details": {
-        "process_id", "item_description", "category_source", "category_normalised",
+        "item_id", "process_id", "source_item_id", "line_number",
+        "item_description", "category_source", "category_normalised",
+    },
+    "mart.procurement_awards": {
+        "award_id", "process_id", "source_award_id", "award_date",
+        "awarded_amount", "currency_code",
+    },
+    "mart.procurement_award_items": {
+        "award_id", "item_id",
+    },
+    "mart.procurement_award_suppliers": {
+        "award_id", "supplier_id",
     },
     "mart.suppliers": {
         "supplier_id", "country_code", "source_system", "supplier_tax_id",
@@ -120,9 +127,9 @@ PROCESS_DETAIL_SQL = """
     insert into mart.procurement_process_details (
         process_id, process_number, title, description, procurement_method,
         process_status, source_status, publication_date, closing_date,
-        award_date, estimated_amount, awarded_amount, currency_code
+        estimated_amount, currency_code
     )
-    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     on conflict (process_id) do update set
         process_number = excluded.process_number,
         title = excluded.title,
@@ -132,9 +139,7 @@ PROCESS_DETAIL_SQL = """
         source_status = excluded.source_status,
         publication_date = excluded.publication_date,
         closing_date = excluded.closing_date,
-        award_date = excluded.award_date,
         estimated_amount = excluded.estimated_amount,
-        awarded_amount = excluded.awarded_amount,
         currency_code = excluded.currency_code
 """
 
@@ -144,21 +149,45 @@ BUYER_DETAIL_SQL = """
     on conflict (process_id, buyer_id) do nothing
 """
 
-SUPPLIER_DETAIL_SQL = """
-    insert into mart.procurement_supplier_details (process_id, supplier_id)
-    values (%s, %s)
-    on conflict (process_id, supplier_id) do nothing
-"""
-
 ITEM_DETAIL_SQL = """
     insert into mart.procurement_item_details (
-        process_id, item_description, category_source, category_normalised
+        item_id, process_id, source_item_id, line_number,
+        item_description, category_source, category_normalised
     )
-    values (%s, %s, %s, %s)
-    on conflict (process_id) do update set
+    values (%s, %s, %s, %s, %s, %s, %s)
+    on conflict (item_id) do update set
+        process_id = excluded.process_id,
+        source_item_id = excluded.source_item_id,
+        line_number = excluded.line_number,
         item_description = excluded.item_description,
         category_source = excluded.category_source,
         category_normalised = excluded.category_normalised
+"""
+
+AWARD_SQL = """
+    insert into mart.procurement_awards (
+        award_id, process_id, source_award_id,
+        award_date, awarded_amount, currency_code
+    )
+    values (%s, %s, %s, %s, %s, %s)
+    on conflict (award_id) do update set
+        process_id = excluded.process_id,
+        source_award_id = excluded.source_award_id,
+        award_date = excluded.award_date,
+        awarded_amount = excluded.awarded_amount,
+        currency_code = excluded.currency_code
+"""
+
+AWARD_ITEM_SQL = """
+    insert into mart.procurement_award_items (award_id, item_id)
+    values (%s, %s)
+    on conflict (award_id, item_id) do nothing
+"""
+
+AWARD_SUPPLIER_SQL = """
+    insert into mart.procurement_award_suppliers (award_id, supplier_id)
+    values (%s, %s)
+    on conflict (award_id, supplier_id) do nothing
 """
 
 
@@ -745,6 +774,7 @@ class Database:
 
         process_rows = []
         item_rows = []
+        award_rows = []
 
         for record in record_list:
             process_id = record["process_id"]
@@ -759,21 +789,35 @@ class Database:
                     record.get("source_status"),
                     record.get("publication_date"),
                     record.get("closing_date"),
-                    record.get("award_date"),
                     record.get("estimated_amount"),
-                    record.get("awarded_amount"),
                     record.get("currency_code"),
                 )
             )
 
-            item_rows.append(
-                (
-                    process_id,
-                    record.get("item_description"),
-                    record.get("category_source"),
-                    record.get("category_normalised"),
+            for item in record.get("items") or []:
+                item_rows.append(
+                    (
+                        item["item_id"],
+                        process_id,
+                        item.get("source_item_id"),
+                        item.get("line_number"),
+                        item.get("item_description"),
+                        item.get("category_source"),
+                        item.get("category_normalised"),
+                    )
                 )
-            )
+
+            for award in record.get("awards") or []:
+                award_rows.append(
+                    (
+                        award["award_id"],
+                        process_id,
+                        award.get("source_award_id"),
+                        award.get("award_date"),
+                        award.get("awarded_amount"),
+                        award.get("currency_code"),
+                    )
+                )
 
         with self.conn.cursor() as cur:
             cur.executemany(PROCESS_DETAIL_SQL, process_rows)
@@ -790,22 +834,51 @@ class Database:
             ]
             if buyer_rows:
                 cur.executemany(BUYER_DETAIL_SQL, buyer_rows)
-            # Replace the relationship set for the processes in this batch so
-            # a source correction cannot leave stale supplier links behind.
+            # Replace child rows and relationship sets so source corrections
+            # cannot leave stale items, awards, or suppliers behind.
             cur.executemany(
-                "delete from mart.procurement_supplier_details where process_id = %s",
+                """delete from mart.procurement_award_suppliers
+                    where award_id in (
+                        select award_id from mart.procurement_awards where process_id = %s
+                    )""",
                 [(record["process_id"],) for record in record_list],
             )
-            supplier_rows = [
-                (supplier_record["process_id"], supplier_id)
+            cur.executemany(
+                """delete from mart.procurement_award_items
+                    where award_id in (
+                        select award_id from mart.procurement_awards where process_id = %s
+                    )""",
+                [(record["process_id"],) for record in record_list],
+            )
+            cur.executemany(
+                "delete from mart.procurement_awards where process_id = %s",
+                [(record["process_id"],) for record in record_list],
+            )
+            cur.executemany(
+                "delete from mart.procurement_item_details where process_id = %s",
+                [(record["process_id"],) for record in record_list],
+            )
+            if item_rows:
+                cur.executemany(ITEM_DETAIL_SQL, item_rows)
+            if award_rows:
+                cur.executemany(AWARD_SQL, award_rows)
+            award_item_rows = [
+                (award["award_id"], item_id)
+                for record in record_list
+                for award in record.get("awards") or []
+                for item_id in award.get("item_ids") or []
+            ]
+            if award_item_rows:
+                cur.executemany(AWARD_ITEM_SQL, award_item_rows)
+            award_supplier_rows = [
+                (supplier_record["award_id"], supplier_id)
                 for supplier_record, supplier_id in zip(
                     supplier_records, supplier_ids, strict=True
                 )
-                if supplier_id is not None
+                if supplier_id is not None and supplier_record.get("award_id")
             ]
-            if supplier_rows:
-                cur.executemany(SUPPLIER_DETAIL_SQL, supplier_rows)
-            cur.executemany(ITEM_DETAIL_SQL, item_rows)
+            if award_supplier_rows:
+                cur.executemany(AWARD_SUPPLIER_SQL, award_supplier_rows)
 
         return len(record_list)
 
@@ -845,7 +918,7 @@ class Database:
                 )
             rows = self.fetch_all("select * from mart.buyers")
             tax, source, name = entity_indexes(rows, "buyer")
-            return [
+            markers = [
                 first_entity_id(
                     record["country_code"], record["source_system"],
                     record.get("buyer_tax_id"), record.get("buyer_id_source"),
@@ -853,6 +926,7 @@ class Database:
                 )
                 for record in records
             ]
+
         return markers
 
     def resolve_supplier_ids(self, records: list[dict[str, Any]]) -> list[int | None]:
@@ -894,7 +968,7 @@ class Database:
                 )
             rows = self.fetch_all("select * from mart.suppliers")
             tax, source, name = entity_indexes(rows, "supplier")
-            return [
+            markers = [
                 first_entity_id(
                     record["country_code"], record["source_system"],
                     record.get("supplier_tax_id"), record.get("supplier_id_source"),
@@ -902,6 +976,7 @@ class Database:
                 )
                 for record in records
             ]
+
         return markers
 
     def upsert_record_core_batch(self, records: list[dict[str, Any]]) -> None:
@@ -924,11 +999,28 @@ def ensure_sslmode(dsn: str) -> str:
 
 
 def supplier_records_for(record: dict[str, Any]) -> list[dict[str, Any]]:
-    """Expand a process into the supplier candidates linked to it.
+    """Expand award suppliers into entity-matching candidates.
 
-    New transforms provide ``suppliers`` as a list. The scalar fields remain
-    supported for sources that naturally emit one supplier per source row.
+    Each returned row retains award_id so the resolved supplier can be linked
+    to the correct award without duplicating the award amount.
     """
+    awards = record.get("awards")
+    if awards is not None:
+        expanded: list[dict[str, Any]] = []
+        for award in awards:
+            if not isinstance(award, dict):
+                continue
+            for supplier in award.get("suppliers") or []:
+                if not isinstance(supplier, dict):
+                    continue
+                candidate = {**record, **supplier, "award_id": award.get("award_id")}
+                if any(
+                    candidate.get(field)
+                    for field in ("supplier_tax_id", "supplier_id_source", "supplier_name")
+                ):
+                    expanded.append(candidate)
+        return expanded
+
     suppliers = record.get("suppliers")
     if suppliers is None:
         if not any(

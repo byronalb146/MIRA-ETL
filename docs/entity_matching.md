@@ -1,17 +1,16 @@
 # Resolucion de entidades: proveedores y compradores
 
-`mart.procurement_buyer_details` y `mart.procurement_supplier_details` son
-relaciones 1-a-muchos. Sus llaves primarias son (`process_id`, `buyer_id`) y
-(`process_id`, `supplier_id`), por lo que una adjudicacion puede estar
-vinculada con varios compradores y proveedores. Las tablas no repiten
-nombre, identificador fiscal ni identificador fuente.
+`mart.procurement_buyer_details` relaciona procesos con compradores.
+`mart.procurement_award_suppliers` relaciona adjudicaciones con proveedores.
+Sus llaves compuestas permiten múltiples entidades sin repetir nombre,
+identificador fiscal ni identificador fuente.
 
 `sql/001_init.sql` incluye dos tablas de dimension
 (`mart.suppliers`, `mart.buyers`) con un ID propio. Las tablas de detalle
-referencian esos IDs; puede haber varias filas de comprador o proveedor para
-un proceso.
-El nombre existe una sola vez en `name_normalised`. La grafia original queda
-en RAW y staging para auditoria.
+referencian esos IDs; puede haber varios compradores por proceso y varios
+proveedores por adjudicacion.
+El nombre existe una sola vez en `name_normalised`. Conserva la grafia
+publicada; solo se normaliza la representacion Unicode y se colapsan espacios.
 
 ## Estrategia de match: tres niveles, en orden de confianza
 
@@ -27,19 +26,19 @@ fila de dimension:
    comprador en su catalogo (`supplier_id_source` / `buyer_id_source`), sin
    ser necesariamente un identificador fiscal. Se usa solo si no hay
    identificador fiscal disponible.
-3. **`NAME_EXACT_NORMALISED`** -- nombre normalizado (mayusculas, sin
-   acentos/puntuacion, sin sufijos legales comunes como "S.A.", "C.A.",
-   "SOCIEDAD ANONIMA" -- ver `src/mira_etl/matching.py`). Solo se usa si no
-   hay ninguno de los dos anteriores.
+3. **`NAME_EXACT_NORMALISED`** -- nombre con Unicode canonico y espacios
+   normalizados. Conserva mayusculas, acentos, puntuacion y sufijos legales.
+   Solo se usa si no hay ninguno de los dos identificadores anteriores.
 El orden anterior se usa durante la carga, pero no se guarda como una columna:
 la tabla final conserva solamente los datos necesarios para identificar y
 relacionar la entidad.
 
 ## Riesgo aceptado explicitamente
 
-La normalizacion de nombre captura variantes de formato (mayusculas, acentos,
-puntuacion, sufijos legales), pero **no** captura:
+La normalizacion de nombre solo captura diferencias de representacion Unicode
+y espacios. Por lo tanto, **no** captura:
 
+- Diferencias de mayusculas, acentos, puntuacion o sufijos legales.
 - Abreviaturas ("Const." vs "Constructora").
 - Errores de tipeo.
 - Orden de palabras distinto.

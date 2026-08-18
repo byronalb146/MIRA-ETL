@@ -18,12 +18,6 @@ MINIMUM_FIELDS = [
     "procurement_method",
     "process_status",
     "publication_date",
-    "award_date",
-    "awarded_amount",
-    "currency_code",
-    "supplier_name",
-    "supplier_tax_id",
-    "item_description",
 ]
 
 
@@ -42,29 +36,72 @@ def build_records(
     extracted_at = datetime.now(UTC)
     records: list[dict[str, Any]] = []
 
+    by_process: dict[str, list[dict[str, str | None]]] = {}
     for row in adjudicaciones:
-        nro_sicop = row.get("NRO_SICOP")
+        if row.get("NRO_SICOP"):
+            by_process.setdefault(str(row["NRO_SICOP"]), []).append(row)
+
+    for nro_sicop, process_awards in by_process.items():
+        row = process_awards[0]
         cartel = carteles.get(nro_sicop or "", {})
-        proveedor = proveedores.get(row.get("CEDULA_PROVEEDOR") or "", {})
         institucion_id = row.get("CEDULA") or cartel.get("CEDULA_INSTITUCION")
         institucion = instituciones.get(institucion_id or "", {})
 
         raw_payload = {
-            "procedimiento_adjudicacion": row,
+            "procedimiento_adjudicacion": process_awards,
             "detalle_cartel": cartel or None,
-            "proveedor": proveedor or None,
             "institucion": institucion or None,
         }
 
-        source_record_id = nro_sicop
+        items: list[dict[str, Any]] = []
+        awards: list[dict[str, Any]] = []
+        seen_items: set[str] = set()
+        for award_row in process_awards:
+            item_id = stable_id(
+                config.country_code, nro_sicop, award_row.get("LINEA"),
+                award_row.get("PROD_ID"), prefix="MIRA-CR-ITEM-",
+            )
+            if item_id not in seen_items:
+                seen_items.add(item_id)
+                items.append({
+                    "item_id": item_id,
+                    "source_item_id": award_row.get("PROD_ID"),
+                    "line_number": award_row.get("LINEA"),
+                    "item_description": award_row.get("DESCR_BIEN_SERVICIO"),
+                    "category_source": award_row.get("OBJETO_GASTO") or cartel.get("CLAS_OBJ"),
+                    "category_normalised": None,
+                })
+
+            supplier_source_id = award_row.get("CEDULA_PROVEEDOR")
+            proveedor = proveedores.get(supplier_source_id or "", {})
+            awards.append({
+                "award_id": stable_id(
+                    config.country_code, nro_sicop, award_row.get("LINEA"),
+                    award_row.get("PROD_ID"), supplier_source_id,
+                    prefix="MIRA-CR-AWARD-",
+                ),
+                "source_award_id": None,
+                "item_ids": [item_id],
+                "award_date": parse_datetime(award_row.get("FECHA_ADJUD_FIRME")),
+                "awarded_amount": parse_decimal(
+                    award_row.get("MONTO_ADJU_LINEA_CRC")
+                    or award_row.get("MONTO_ADJU_LINEA")
+                ),
+                "currency_code": award_row.get("MONEDA_ADJUDICADA") or cartel.get("TIPO_MONEDA"),
+                "suppliers": [{
+                    "supplier_name": award_row.get("NOMBRE_PROVEEDOR") or proveedor.get("NOMBRE_PROVEEDOR"),
+                    "supplier_id_source": supplier_source_id,
+                    "supplier_tax_id": supplier_source_id,
+                    "supplier_type": normalise_supplier_type(
+                        proveedor.get("TIPO_PROVEEDOR"), award_row.get("TIPO_OFERTA")
+                    ),
+                }],
+            })
 
         record = {
             "process_id": stable_id(
                 config.country_code,
                 nro_sicop,
-                row.get("LINEA"),
-                row.get("CEDULA_PROVEEDOR"),
-                row.get("PROD_ID"),
                 prefix="MIRA-CR-",
             ),
             "process_number": row.get("NUMERO_PROCEDIMIENTO") or cartel.get("NRO_PROCEDIMIENTO"),
@@ -78,23 +115,19 @@ def build_records(
             "source_status": cartel.get("CARTEL_STAT"),
             "publication_date": parse_datetime(cartel.get("FECHA_PUBLICACION")),
             "closing_date": parse_datetime(cartel.get("FECHAH_APERTURA")),
-            "award_date": parse_datetime(row.get("FECHA_ADJUD_FIRME")),
             "estimated_amount": parse_decimal(cartel.get("MONTO_EST")),
-            "awarded_amount": parse_decimal(row.get("MONTO_ADJU_LINEA_CRC") or row.get("MONTO_ADJU_LINEA")),
-            "currency_code": row.get("MONEDA_ADJUDICADA") or cartel.get("TIPO_MONEDA"),
-            "supplier_name": row.get("NOMBRE_PROVEEDOR") or proveedor.get("NOMBRE_PROVEEDOR"),
-            "supplier_id_source": row.get("CEDULA_PROVEEDOR"),
-            "supplier_tax_id": row.get("CEDULA_PROVEEDOR"),
-            "supplier_type": normalise_supplier_type(proveedor.get("TIPO_PROVEEDOR"), row.get("TIPO_OFERTA")),
-            "item_description": row.get("DESCR_BIEN_SERVICIO"),
-            "category_source": row.get("OBJETO_GASTO") or cartel.get("CLAS_OBJ"),
-            "category_normalised": None,
+            "currency_code": cartel.get("TIPO_MONEDA"),
+            "items": items,
+            "awards": awards,
             "country_code": config.country_code,
             "source_system": config.source_system,
-            "source_record_id": source_record_id,
+            "source_record_id": nro_sicop,
             "source_url": config.source_url_for_period(period),
             "extracted_at": extracted_at,
-            "source_last_modified_at": parse_datetime(row.get("fecha_rev")),
+            "source_last_modified_at": max(
+                (date for date in (parse_datetime(item.get("fecha_rev")) for item in process_awards) if date),
+                default=None,
+            ),
             "connector_version": connector_version,
             "raw_payload": raw_payload,
             "raw_payload_hash": stable_json_hash(raw_payload),

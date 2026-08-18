@@ -48,7 +48,7 @@ La normalizacion toma cada fila de `ProcedimientoAdjudicacion.csv` como una adju
 
 | Grupo PDF | Campo MIRA | Origen en ZIP | Transformacion | Destino |
 |---|---|---|---|---|
-| Identificacion | `process_id` | `country_code` + `ProcedimientoAdjudicacion.NRO_SICOP` + `LINEA` + `CEDULA_PROVEEDOR` + `PROD_ID` | ID interno estable `MIRA-CR-{hash}` que une todas las tablas mart | `mart.procurement_record_core.process_id` |
+| Identificacion | `process_id` | `country_code` + `ProcedimientoAdjudicacion.NRO_SICOP` | ID interno estable `MIRA-CR-{hash}`; todas las lineas del SICOP comparten un proceso | `mart.procurement_record_core.process_id` |
 | Identificacion | `process_number` | `ProcedimientoAdjudicacion.NUMERO_PROCEDIMIENTO`; fallback `DetalleCarteles.NRO_PROCEDIMIENTO` | Copia directa | `mart.procurement_process_details.process_number` |
 | Identificacion | `title` | `DetalleCarteles.CARTEL_NM`; fallback `ProcedimientoAdjudicacion.DESCR_PROCEDIMIENTO` | Copia directa | `mart.procurement_process_details.title` |
 | Identificacion | `description` | `ProcedimientoAdjudicacion.DESCR_PROCEDIMIENTO`; fallback `DetalleCarteles.CARTEL_NM` | Copia directa | `mart.procurement_process_details.description` |
@@ -60,10 +60,10 @@ La normalizacion toma cada fila de `ProcedimientoAdjudicacion.csv` como una adju
 | Contratacion | `source_status` | `DetalleCarteles.CARTEL_STAT` | Valor original de la fuente | `mart.procurement_process_details.source_status` |
 | Fechas | `publication_date` | `DetalleCarteles.FECHA_PUBLICACION` | Parseo a `timestamptz`; si no cruza por `NRO_SICOP`, queda `NULL` | `mart.procurement_process_details.publication_date` |
 | Fechas | `closing_date` | `DetalleCarteles.FECHAH_APERTURA` | Parseo a `timestamptz`; si no cruza por `NRO_SICOP`, queda `NULL` | `mart.procurement_process_details.closing_date` |
-| Fechas | `award_date` | `ProcedimientoAdjudicacion.FECHA_ADJUD_FIRME` | Parseo a `timestamptz` | `mart.procurement_process_details.award_date` |
+| Fechas | `award_date` | `ProcedimientoAdjudicacion.FECHA_ADJUD_FIRME` | Parseo a `timestamptz` por adjudicacion | `mart.procurement_awards.award_date` |
 | Montos | `estimated_amount` | `DetalleCarteles.MONTO_EST` | Parseo a `numeric`; si no cruza por `NRO_SICOP`, queda `NULL` | `mart.procurement_process_details.estimated_amount` |
-| Montos | `awarded_amount` | `ProcedimientoAdjudicacion.MONTO_ADJU_LINEA_CRC`; fallback `ProcedimientoAdjudicacion.MONTO_ADJU_LINEA` | Parseo a `numeric` | `mart.procurement_process_details.awarded_amount` |
-| Montos | `currency_code` | `ProcedimientoAdjudicacion.MONEDA_ADJUDICADA` | Copia directa del codigo fuente | `mart.procurement_process_details.currency_code` |
+| Montos | `awarded_amount` | `ProcedimientoAdjudicacion.MONTO_ADJU_LINEA_CRC`; fallback `ProcedimientoAdjudicacion.MONTO_ADJU_LINEA` | Parseo a `numeric` por adjudicacion | `mart.procurement_awards.awarded_amount` |
+| Montos | `currency_code` | `ProcedimientoAdjudicacion.MONEDA_ADJUDICADA` | Copia directa por adjudicacion | `mart.procurement_awards.currency_code` |
 | Proveedor | `supplier_name` | `ProcedimientoAdjudicacion.NOMBRE_PROVEEDOR`; fallback `Proveedores.NOMBRE_PROVEEDOR` | Nombre normalizado y deduplicado | `mart.suppliers.name_normalised` |
 | Proveedor | `supplier_id_source` | `ProcedimientoAdjudicacion.CEDULA_PROVEEDOR` | Copia directa | `mart.suppliers.supplier_id_source` |
 | Proveedor | `supplier_tax_id` | `ProcedimientoAdjudicacion.CEDULA_PROVEEDOR` | Se usa la cedula proveedor como identificador fiscal disponible | `mart.suppliers.supplier_tax_id` |
@@ -139,7 +139,6 @@ En la ultima ejecucion validada:
 mart.procurement_record_core:        3276
 mart.procurement_process_details:    3276
 mart.procurement_buyer_details:      3276
-mart.procurement_supplier_details:   3276
 mart.procurement_item_details:       3276
 ```
 

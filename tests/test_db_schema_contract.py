@@ -15,15 +15,15 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         )
         self.assertIsNone(entity_id)
 
-    def test_supplier_relationship_has_composite_primary_key(self) -> None:
+    def test_award_supplier_relationship_has_composite_primary_key(self) -> None:
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
             encoding="utf-8"
         )
-        body = create_table_body(sql, "mart.procurement_supplier_details")
+        body = create_table_body(sql, "mart.procurement_award_suppliers")
         self.assertIsNotNone(body)
         self.assertRegex(
             body or "",
-            r"primary\s+key\s*\(\s*process_id\s*,\s*supplier_id\s*\)",
+            r"primary\s+key\s*\(\s*award_id\s*,\s*supplier_id\s*\)",
         )
 
     def test_buyer_relationship_has_composite_primary_key(self) -> None:
@@ -58,7 +58,7 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         )
         for table, columns in SCHEMA_CONTRACT.items():
             body = create_table_body(sql, table)
-            self.assertIsNotNone(body, f"{table} is not created by 001_init.sql")
+            self.assertIsNotNone(body, f"{table} is not created by any sql/*.sql file")
             for column in columns:
                 declared_in_create = re.search(rf"\b{re.escape(column)}\b", body or "")
                 declared_by_alter = re.search(
@@ -104,6 +104,13 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         actual["mart.buyers"].add("display_name")
 
         self.assertEqual(schema_mismatches(actual), [])
+
+
+def all_sql_text() -> str:
+    sql_dir = Path(__file__).parents[1] / "sql"
+    return "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(sql_dir.glob("*.sql"))
+    )
 
 
 def create_table_body(sql: str, table: str) -> str | None:

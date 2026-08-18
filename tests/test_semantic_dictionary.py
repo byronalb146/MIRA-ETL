@@ -60,7 +60,7 @@ class SemanticDictionaryEnumTest(unittest.TestCase):
             f"could not find a CHECK ... in (...) constraint for {check_column}",
         )
         from_dictionary = extract_dictionary_enum(
-            read("005_semantic_dictionary.sql"), dictionary_view, dictionary_column
+            read("013_semantic_dictionary.sql"), dictionary_view, dictionary_column
         )
         self.assertTrue(
             from_dictionary,
