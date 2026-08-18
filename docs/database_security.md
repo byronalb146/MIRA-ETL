@@ -52,37 +52,6 @@ DATABASE_URL=postgresql://mira_query:...@host:5432/database?sslmode=require
 DATABASE_URL_LOG=postgresql://mira_logger:...@host:5432/database?sslmode=require
 ```
 
-## Acceso público temporal al mart
-
-El prototipo `web/index.html` todavía consulta `mart` mediante Supabase. Si ese
-prototipo debe permanecer activo, habilitar RLS y crear políticas de solo
-lectura para `anon` y `authenticated` sobre las tablas que consume. Este acceso
-es temporal y debe retirarse cuando MIRA-WEB consulte únicamente MIRA-API.
-
-Ejemplo para una tabla:
-
-```sql
-alter table mart.processes enable row level security;
-grant usage on schema mart to anon, authenticated;
-grant select on mart.processes to anon, authenticated;
-create policy "Public read access"
-    on mart.processes
-    for select to anon, authenticated
-    using (true);
-```
-
-Aplicar el mismo patrón solamente a las tablas requeridas por el prototipo:
-
-- `processes`
-- `process_buyers`
-- `items`
-- `awards`
-- `award_items`
-- `award_suppliers`
-- `buyers`
-- `suppliers`
-- `web_country_stats`
-
 ## Verificación
 
 Con `mira_query`:
