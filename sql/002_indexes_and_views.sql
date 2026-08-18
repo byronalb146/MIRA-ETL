@@ -10,10 +10,18 @@ create index if not exists idx_processes_country
 -- when the row is written. unaccent() is STABLE, not IMMUTABLE, so it cannot
 -- be used directly in an index expression; this wrapper pins the dictionary
 -- by name to make it safely IMMUTABLE.
+--
+-- Lives in `query`, not `mart`: mira_query only has USAGE on `query` (see
+-- docs/database_security.md), so MIRA-API's own runtime queries have to call
+-- this same function to match the index expression below. A copy in `mart`
+-- would build the index fine but be unreachable at query time -- mira_query
+-- would get "permission denied for schema mart" the moment it tried to call
+-- it directly (querying *through* a view doesn't need this, but constructing
+-- a WHERE/ORDER BY with this function by name does).
 create extension if not exists pg_trgm;
 create extension if not exists unaccent;
 
-create or replace function mart.f_unaccent(text)
+create or replace function query.f_unaccent(text)
 returns text
 language sql
 immutable
@@ -23,10 +31,10 @@ as $$
 $$;
 
 create index if not exists idx_suppliers_name_trgm
-    on mart.suppliers using gin (lower(mart.f_unaccent(name_normalised)) gin_trgm_ops);
+    on mart.suppliers using gin (lower(query.f_unaccent(name_normalised)) gin_trgm_ops);
 
 create index if not exists idx_buyers_name_trgm
-    on mart.buyers using gin (lower(mart.f_unaccent(name_normalised)) gin_trgm_ops);
+    on mart.buyers using gin (lower(query.f_unaccent(name_normalised)) gin_trgm_ops);
 
 create index if not exists idx_items_process
     on mart.items (process_id);

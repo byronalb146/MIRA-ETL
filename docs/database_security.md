@@ -22,6 +22,10 @@ alter role mira_query set default_transaction_read_only = on;
 grant usage on schema query to mira_query;
 grant select on all tables in schema query to mira_query;
 alter default privileges in schema query grant select on tables to mira_query;
+-- query.f_unaccent() backs the fuzzy-search index (sql/002_indexes_and_views.sql).
+-- New functions default to EXECUTE for PUBLIC, so this line is usually already
+-- true, but state it explicitly rather than depend on that default.
+grant execute on function query.f_unaccent(text) to mira_query;
 
 create role mira_logger with login noinherit;
 grant usage on schema analytics to mira_logger;
