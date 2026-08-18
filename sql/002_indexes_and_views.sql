@@ -4,6 +4,38 @@
 create index if not exists idx_processes_country
     on mart.processes (country_code);
 
+-- Fuzzy entity search (MIRA-API resolves a typed name to a supplier/buyer
+-- candidate list). name_normalised keeps the published casing/accents, so
+-- matching has to fold case and accents at query time -- it is never folded
+-- when the row is written. unaccent() is STABLE, not IMMUTABLE, so it cannot
+-- be used directly in an index expression; this wrapper pins the dictionary
+-- by name to make it safely IMMUTABLE.
+--
+-- Lives in `query`, not `mart`: mira_query only has USAGE on `query` (see
+-- docs/database_security.md), so MIRA-API's own runtime queries have to call
+-- this same function to match the index expression below. A copy in `mart`
+-- would build the index fine but be unreachable at query time -- mira_query
+-- would get "permission denied for schema mart" the moment it tried to call
+-- it directly (querying *through* a view doesn't need this, but constructing
+-- a WHERE/ORDER BY with this function by name does).
+create extension if not exists pg_trgm;
+create extension if not exists unaccent;
+
+create or replace function query.f_unaccent(text)
+returns text
+language sql
+immutable
+parallel safe
+as $$
+    select public.unaccent('public.unaccent', coalesce($1, ''))
+$$;
+
+create index if not exists idx_suppliers_name_trgm
+    on mart.suppliers using gin (lower(query.f_unaccent(name_normalised)) gin_trgm_ops);
+
+create index if not exists idx_buyers_name_trgm
+    on mart.buyers using gin (lower(query.f_unaccent(name_normalised)) gin_trgm_ops);
+
 create index if not exists idx_items_process
     on mart.items (process_id);
 
@@ -89,3 +121,22 @@ from mart.award_items;
 create or replace view query.v_award_suppliers as
 select award_id, supplier_id
 from mart.award_suppliers;
+
+-- What source/period the ETL actually loaded, and how the run finished.
+-- MIRA-API needs this to tell "zero rows because nothing was awarded" apart
+-- from "zero rows because this period was never loaded" -- a bare count over
+-- v_process cannot make that distinction on its own. audit.etl_runs.source
+-- holds the source system identifier (e.g. "costa_rica_sicop"), the same
+-- value as v_process.source_system -- not an ISO country code, so this joins
+-- on source_system, not country_code.
+create or replace view query.v_coverage as
+select
+    r.source as source_system,
+    r.period,
+    r.status,
+    r.finished_at as loaded_at,
+    rc.table_name,
+    rc.row_count
+from audit.etl_runs r
+left join audit.etl_row_counts rc on rc.run_id = r.id
+where r.status = 'SUCCESS';

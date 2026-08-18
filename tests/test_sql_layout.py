@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -41,6 +42,38 @@ class SqlLayoutTest(unittest.TestCase):
         self.assertNotIn("semantic_dictionary", first_two)
         self.assertRegex(dictionary, r"(?i)create\s+table.*query\.semantic_dictionary")
         self.assertRegex(dictionary, r"(?i)insert\s+into\s+query\.semantic_dictionary")
+
+    def test_name_search_uses_an_immutable_unaccent_wrapper(self) -> None:
+        # unaccent() is STABLE, not IMMUTABLE -- Postgres refuses to build an
+        # index on it directly. This locks in that the index expression goes
+        # through the wrapper function, not the raw extension function.
+        #
+        # The wrapper lives in `query`, not `mart`: mira_query only has USAGE
+        # on `query` (docs/database_security.md), so a copy in `mart` would
+        # build the index fine but be uncallable by MIRA-API's own queries at
+        # runtime. Both the index expression and MIRA-API's search query must
+        # call the exact same qualified function for the index to be used.
+        sql = read("002_indexes_and_views.sql")
+        self.assertRegex(sql, r"(?i)create\s+or\s+replace\s+function\s+query\.f_unaccent")
+        self.assertNotRegex(sql, r"(?i)create\s+or\s+replace\s+function\s+mart\.f_unaccent")
+        self.assertRegex(
+            sql,
+            r"(?i)using\s+gin\s*\(\s*lower\(\s*query\.f_unaccent\(name_normalised\)\s*\)",
+        )
+
+    def test_v_coverage_reads_source_system_not_country_code(self) -> None:
+        # audit.etl_runs.source holds a source-system identifier (e.g.
+        # "costa_rica_sicop"), not an ISO country code -- verified against
+        # production data. Naming this column country_code would be wrong.
+        sql = read("002_indexes_and_views.sql")
+        match = re.search(
+            r"(?is)create\s+or\s+replace\s+view\s+query\.v_coverage\s+as(.*?);",
+            sql,
+        )
+        self.assertIsNotNone(match)
+        body = match.group(1) if match else ""
+        self.assertRegex(body, r"(?i)r\.source\s+as\s+source_system")
+        self.assertNotRegex(body, r"(?i)as\s+country_code")
 
 
 def read(filename: str) -> str:
