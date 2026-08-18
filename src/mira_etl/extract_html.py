@@ -2,47 +2,103 @@ from __future__ import annotations
 
 import re
 import time
+from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
+from mira_etl.config import SourceConfig
 
-BASE_URL = (
-    "https://www.gestion.nicaraguacompra.gob.ni/siscae/portal/"
-    "adquisiciones-gestion/busquedaProcedimientosVigentes?proc_estado=VIGENTE"
-)
-FORM_NAME = "resultadoView:listadoProcedimientosForm"
-PORTLET_PREFIX = "Pluto__adquisiciones_gestion_portlet_busquedaProcedimientosVigentesPortlet"
-
-REQUEST_TIMEOUT_SECONDS = 45
-MAX_REQUEST_RETRIES = 3
-MAX_PAGES = 10  # safety cap; the confirmed pagination pattern only covers one block of 10 pages
-USER_AGENT = (
+DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
 
-def fetch_with_retries(session: requests.Session, method: str, url: str, **kwargs: Any) -> requests.Response:
-    """SISCAE runs on a single, unbalanced instance and times out intermittently.
-    Wrap every request with a small retry/backoff instead of failing the whole run."""
+@dataclass(frozen=True)
+class HtmlSessionSpec:
+    """Configuration for the shared stateful JSF/portlet scraper."""
+
+    base_url: str
+    dataset_name: str
+    form_name_prefix: str
+    portlet_prefix: str
+    parser: str = "active_procedures"
+    page_size_field_suffix: str = "resultadosItems"
+    page_size_value: str = "CIEN"
+    link_hidden_field_suffix: str = "_link_hidden_"
+    next_link_template: str = (
+        "{form_name}:{portlet_prefix}__id88_{current_page}:"
+        "{portlet_prefix}__id89"
+    )
+    page_text_pattern: str = r"P[aá]gina\s+(\d+)\s*/\s*(\d+)"
+    max_pages: int = 10
+    request_timeout_seconds: int = 45
+    max_request_retries: int = 3
+    retry_backoff_seconds: int = 5
+    user_agent: str = DEFAULT_USER_AGENT
+
+    @classmethod
+    def from_config(cls, config: SourceConfig) -> "HtmlSessionSpec":
+        download = config.download
+        webforms = download.get("webforms") or {}
+        required = {
+            "base_url": download.get("base_url"),
+            "dataset_name": webforms.get("dataset_name"),
+            "form_name_prefix": webforms.get("form_name_prefix"),
+            "portlet_prefix": webforms.get("portlet_prefix"),
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            raise ValueError(
+                f"HTML source '{config.source}' is missing download configuration: "
+                + ", ".join(missing)
+            )
+        return cls(
+            **required,
+            parser=webforms.get("parser", "active_procedures"),
+            page_size_field_suffix=webforms.get("page_size_field_suffix", "resultadosItems"),
+            page_size_value=webforms.get("page_size_value", "CIEN"),
+            link_hidden_field_suffix=webforms.get("link_hidden_field_suffix", "_link_hidden_"),
+            next_link_template=webforms.get("next_link_template", cls.next_link_template),
+            page_text_pattern=webforms.get("page_text_pattern", cls.page_text_pattern),
+            max_pages=int(webforms.get("max_pages", 10)),
+            request_timeout_seconds=int(webforms.get("request_timeout_seconds", 45)),
+            max_request_retries=int(webforms.get("max_request_retries", 3)),
+            retry_backoff_seconds=int(webforms.get("retry_backoff_seconds", 5)),
+            user_agent=webforms.get("user_agent", DEFAULT_USER_AGENT),
+        )
+
+
+def fetch_with_retries(
+    session: requests.Session,
+    method: str,
+    url: str,
+    *,
+    timeout_seconds: int,
+    max_retries: int,
+    retry_backoff_seconds: int,
+    **kwargs: Any,
+) -> requests.Response:
+    """Execute a source request with configurable retry/backoff."""
     last_error: Exception | None = None
-    for attempt in range(1, MAX_REQUEST_RETRIES + 1):
+    for attempt in range(1, max_retries + 1):
         try:
             if method == "get":
-                return session.get(url, timeout=REQUEST_TIMEOUT_SECONDS, **kwargs)
-            return session.post(url, timeout=REQUEST_TIMEOUT_SECONDS, **kwargs)
+                return session.get(url, timeout=timeout_seconds, **kwargs)
+            return session.post(url, timeout=timeout_seconds, **kwargs)
         except requests.exceptions.RequestException as exc:  # pragma: no cover - network dependent
             last_error = exc
-            time.sleep(5 * attempt)
+            time.sleep(retry_backoff_seconds * attempt)
     assert last_error is not None
     raise last_error
 
 
 def parse_form(html: str, form_name_prefix: str) -> tuple[str | None, dict[str, str] | None, BeautifulSoup]:
     """Locate the JSF form matching a field-name prefix and build a submittable payload
-    from its current input/select values. SISCAE is a stateful Java-portlet application:
+    from its current input/select values. These are stateful Java-portlet applications:
     every POST must resend the form's own hidden fields, not just the ones being changed."""
     soup = BeautifulSoup(html, "html.parser")
     target_form = None
@@ -70,7 +126,7 @@ def parse_form(html: str, form_name_prefix: str) -> tuple[str | None, dict[str, 
 
 
 def parse_active_procedures_page(soup: BeautifulSoup) -> list[dict[str, str | None]]:
-    """Parse one page of the "Procesos Vigentes" results table.
+    """Parse one page rendered by the shared active-procedures template.
     Each result is a 3-cell <tr>: [tipo + numero, detail block, "Mas Datos" link].
     The detail block is free text with fixed labels (Estado, Codigo SIGAF,
     Publicacion, Cierre, Ultima Actualizacion) followed by institucion, then
@@ -157,41 +213,63 @@ def parse_active_procedures_page(soup: BeautifulSoup) -> list[dict[str, str | No
     return rows
 
 
-def fetch_active_procedures(session: requests.Session, limit: int | None = None) -> list[dict[str, str | None]]:
-    """Fetch every "Procesos Vigentes" record from SISCAE: raises the page size to
-    100 (from the default 10) and follows the validated pagination pattern
-    (portlet link id N corresponds to page N+1, within one block of 10 pages).
+PARSERS = {
+    "active_procedures": parse_active_procedures_page,
+}
+
+
+def fetch_html_dataset(
+    session: requests.Session,
+    spec: HtmlSessionSpec,
+    limit: int | None = None,
+) -> list[dict[str, str | None]]:
+    """Fetch one configured JSF/portlet dataset, including pagination.
 
     If `limit` is set, stops paginating as soon as enough rows are collected
-    instead of walking every page -- useful for quick smoke tests so they
-    don't hammer the source server for a handful of records."""
-    session.headers.setdefault("User-Agent", USER_AGENT)
+    instead of walking every page.
+    """
+    try:
+        parse_page = PARSERS[spec.parser]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported HTML parser: {spec.parser}") from exc
 
-    response = fetch_with_retries(session, "get", BASE_URL)
-    action, payload, _ = parse_form(response.text, FORM_NAME)
+    session.headers.setdefault("User-Agent", spec.user_agent)
+
+    request_options = {
+        "timeout_seconds": spec.request_timeout_seconds,
+        "max_retries": spec.max_request_retries,
+        "retry_backoff_seconds": spec.retry_backoff_seconds,
+    }
+
+    response = fetch_with_retries(session, "get", spec.base_url, **request_options)
+    action, payload, _ = parse_form(response.text, spec.form_name_prefix)
     if action is None or payload is None:
-        raise RuntimeError("Could not locate the results form on the Procesos Vigentes page.")
+        raise RuntimeError(
+            f"Could not locate form '{spec.form_name_prefix}' at {spec.base_url}."
+        )
 
-    payload[f"{FORM_NAME}:resultadosItems"] = "CIEN"
-    payload[f"{FORM_NAME}:_link_hidden_"] = ""
-    response = fetch_with_retries(session, "post", action, data=payload)
+    payload[f"{spec.form_name_prefix}:{spec.page_size_field_suffix}"] = spec.page_size_value
+    payload[f"{spec.form_name_prefix}:{spec.link_hidden_field_suffix}"] = ""
+    response = fetch_with_retries(
+        session, "post", urljoin(spec.base_url, action), data=payload, **request_options
+    )
 
     all_rows: list[dict[str, str | None]] = []
     page_number = 1
 
-    while page_number <= MAX_PAGES:
-        action, payload, soup = parse_form(response.text, FORM_NAME)
+    while page_number <= spec.max_pages:
+        action, payload, soup = parse_form(response.text, spec.form_name_prefix)
         if action is None or payload is None:
             break
 
-        page_rows = parse_active_procedures_page(soup)
+        page_rows = parse_page(soup)
         all_rows.extend(page_rows)
 
         if limit is not None and len(all_rows) >= limit:
             return all_rows[:limit]
 
         page_text = soup.get_text(" ", strip=True)
-        match = re.search(r"P[aá]gina\s+(\d+)\s*/\s*(\d+)", page_text)
+        match = re.search(spec.page_text_pattern, page_text)
         if not match:
             break
         current_page, total_pages = int(match.group(1)), int(match.group(2))
@@ -199,27 +277,35 @@ def fetch_active_procedures(session: requests.Session, limit: int | None = None)
             break
 
         # Confirmed pattern: to request page (current_page + 1), N = current_page.
-        next_link_value = f"{FORM_NAME}:{PORTLET_PREFIX}__id88_{current_page}:{PORTLET_PREFIX}__id89"
-        payload[f"{FORM_NAME}:_link_hidden_"] = next_link_value
-        response = fetch_with_retries(session, "post", action, data=payload)
+        next_link_value = spec.next_link_template.format(
+            form_name=spec.form_name_prefix,
+            portlet_prefix=spec.portlet_prefix,
+            current_page=current_page,
+        )
+        payload[f"{spec.form_name_prefix}:{spec.link_hidden_field_suffix}"] = next_link_value
+        response = fetch_with_retries(
+            session, "post", urljoin(spec.base_url, action), data=payload, **request_options
+        )
         page_number += 1
 
     return all_rows
 
 
-def scrape_siscae(period: str, limit: int | None = None) -> dict[str, list[dict[str, Any]]]:
-    """Entry point used by the pipeline. Returns a mapping shaped like the CSV-based
-    connectors' `source_rows` (logical dataset name -> list of row dicts), so the
-    rest of the pipeline (raw storage, staging, mart upsert) needs no changes.
+def scrape_html_source(
+    config: SourceConfig,
+    period: str,
+    limit: int | None = None,
+    session: requests.Session | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Generic pipeline entry point for configured HTML session sources.
 
     `limit` caps the number of records fetched -- intended for quick smoke tests
-    against a real database without loading the full ~400+ active processes.
-
-    Only "Procesos Vigentes" is wired up for now. Awarded-process detail (supplier,
-    RUC, awarded amount) requires a Mas Datos -> Adjudicacion -> Volver navigation
-    that is not reliable yet (SISCAE renders the Adjudicacion tab intermittently)
-    and is intentionally left out of this connector until that is fixed.
+    against a real database. `period` is accepted for the common extractor
+    contract; current active-procedure portals expose current state rather than
+    a historical period.
     """
-    session = requests.Session()
-    active_rows = fetch_active_procedures(session, limit=limit)
-    return {"procesos_vigentes": active_rows}
+    del period
+    spec = HtmlSessionSpec.from_config(config)
+    active_session = session or requests.Session()
+    rows = fetch_html_dataset(active_session, spec, limit=limit)
+    return {spec.dataset_name: rows}

@@ -45,7 +45,7 @@ def build_records(
     there is no supplier/award data here by definition, since these processes
     have not been awarded yet. Awarded-process detail (supplier, RUC, awarded
     amount) needs a separate, not-yet-reliable navigation and is intentionally
-    left out (see extract_html.scrape_siscae docstring).
+    left out (see docs/nicaragua_siscae_mapping.md).
     """
     active_procedures = source_rows.get("procesos_vigentes", [])
     extracted_at = datetime.now(UTC)
