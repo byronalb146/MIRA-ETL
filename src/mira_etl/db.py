@@ -74,8 +74,12 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
         "buyer_id", "country_code", "source_system", "buyer_tax_id",
         "buyer_id_source", "name_normalised",
     },
-    "mart.web_country_stats": {
-        "country_code", "process_count", "buyer_count", "refreshed_at",
+    "web.coverage_sources": {
+        "source_key", "country_code", "source_system", "display_name", "status",
+        "process_count", "buyer_count", "supplier_count", "publication_date_min",
+        "publication_date_max", "complete_process_count", "partial_process_count",
+        "process_without_date_count", "last_successful_load_at", "refreshed_at",
+        "sort_order",
     },
 }
 
@@ -224,7 +228,7 @@ class Database:
                 """
                 select table_schema, table_name, column_name
                   from information_schema.columns
-                 where table_schema in ('raw', 'staging', 'mart', 'audit')
+                 where table_schema in ('raw', 'staging', 'mart', 'audit', 'web')
                 """
             )
             rows = cur.fetchall()
@@ -283,25 +287,95 @@ class Database:
             (status, error_message, run_id),
         )
 
-    def refresh_web_country_stats(self, country_code: str) -> None:
-        """Refresh exact public counts for one country after its mart load."""
+    def refresh_web_coverage_source(
+        self,
+        *,
+        source_key: str,
+        country_code: str,
+        source_system: str,
+        display_name: str,
+    ) -> None:
+        """Recompute the exact public summary for one successfully loaded source."""
         self.execute(
             """
-            insert into mart.web_country_stats (
-                country_code, process_count, buyer_count, refreshed_at
+            with source_processes as (
+                select process_id, publication_date, data_quality_status
+                from mart.processes
+                where country_code = %s and source_system = %s
+            ),
+            process_stats as (
+                select
+                    count(*) as process_count,
+                    min(publication_date)::date as publication_date_min,
+                    max(publication_date)::date as publication_date_max,
+                    count(*) filter (
+                        where data_quality_status = 'COMPLETE'
+                    ) as complete_process_count,
+                    count(*) filter (
+                        where data_quality_status = 'PARTIAL'
+                    ) as partial_process_count,
+                    count(*) filter (
+                        where publication_date is null
+                    ) as process_without_date_count
+                from source_processes
+            ),
+            buyer_stats as (
+                select count(distinct pb.buyer_id) as buyer_count
+                from source_processes p
+                join mart.process_buyers pb on pb.process_id = p.process_id
+            ),
+            supplier_stats as (
+                select count(distinct aws.supplier_id) as supplier_count
+                from source_processes p
+                join mart.awards a on a.process_id = p.process_id
+                join mart.award_suppliers aws on aws.award_id = a.award_id
             )
-            values (
-                %s,
-                (select count(*) from mart.processes where country_code = %s),
-                (select count(*) from mart.buyers where country_code = %s),
+            insert into web.coverage_sources (
+                source_key, country_code, source_system, display_name, status,
+                process_count, buyer_count, supplier_count,
+                publication_date_min, publication_date_max,
+                complete_process_count, partial_process_count,
+                process_without_date_count, last_successful_load_at, refreshed_at
+            )
+            select
+                %s, %s, %s, %s, 'ACTIVE',
+                ps.process_count,
+                bs.buyer_count,
+                ss.supplier_count,
+                ps.publication_date_min,
+                ps.publication_date_max,
+                ps.complete_process_count,
+                ps.partial_process_count,
+                ps.process_without_date_count,
+                (
+                    select max(r.finished_at)
+                    from audit.etl_runs r
+                    where r.source = %s and r.status = 'SUCCESS'
+                ),
                 now()
-            )
-            on conflict (country_code) do update set
+            from process_stats ps
+            cross join buyer_stats bs
+            cross join supplier_stats ss
+            on conflict (source_key) do update set
+                country_code = excluded.country_code,
+                source_system = excluded.source_system,
+                display_name = excluded.display_name,
+                status = excluded.status,
                 process_count = excluded.process_count,
                 buyer_count = excluded.buyer_count,
+                supplier_count = excluded.supplier_count,
+                publication_date_min = excluded.publication_date_min,
+                publication_date_max = excluded.publication_date_max,
+                complete_process_count = excluded.complete_process_count,
+                partial_process_count = excluded.partial_process_count,
+                process_without_date_count = excluded.process_without_date_count,
+                last_successful_load_at = excluded.last_successful_load_at,
                 refreshed_at = excluded.refreshed_at
             """,
-            (country_code, country_code, country_code),
+            (
+                country_code, source_system,
+                source_key, country_code, source_system, display_name, source_key,
+            ),
         )
 
     def finish_run_after_error(

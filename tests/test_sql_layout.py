@@ -36,6 +36,11 @@ class SqlLayoutTest(unittest.TestCase):
         )
         self.assertNotRegex(sql, r"(?i)create\s+index[\s\S]*?on\s+analytics\.")
 
+    def test_public_coverage_does_not_leak_into_model_views(self) -> None:
+        sql = read("002_indexes_and_views.sql")
+        self.assertNotRegex(sql, r"(?i)create\s+(?:or\s+replace\s+)?view\s+web\.")
+        self.assertNotIn("web.coverage_sources", sql)
+
     def test_dictionary_is_isolated_in_third_file(self) -> None:
         first_two = read("001_init.sql") + read("002_indexes_and_views.sql")
         dictionary = read("003_semantic_dictionary.sql")

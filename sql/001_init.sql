@@ -4,6 +4,7 @@ create schema if not exists mart;
 create schema if not exists audit;
 create schema if not exists query;
 create schema if not exists analytics;
+create schema if not exists web;
 
 create table if not exists audit.etl_runs (
     id bigserial primary key,
@@ -192,14 +193,36 @@ create table if not exists mart.award_suppliers (
     primary key (award_id, supplier_id)
 );
 
--- Small, exact summary consumed by the public website. It is refreshed by
--- the ETL after every successful country load, so browsers never COUNT the
--- large mart tables directly.
-create table if not exists mart.web_country_stats (
-    country_code text primary key,
-    process_count bigint not null,
-    buyer_count bigint not null,
-    refreshed_at timestamptz not null default now()
+-- Exact, source-grain summary consumed by fixed public API endpoints. This is
+-- deliberately outside `query`: generated SQL has no access to the `web`
+-- schema. ACTIVE rows are upserted by the ETL; PLANNED rows may be registered
+-- before a connector has loaded any data.
+create table if not exists web.coverage_sources (
+    source_key text primary key,
+    country_code text not null,
+    source_system text not null,
+    display_name text not null,
+    status text not null check (status in ('ACTIVE', 'PLANNED', 'INACTIVE')),
+    process_count bigint not null default 0 check (process_count >= 0),
+    buyer_count bigint not null default 0 check (buyer_count >= 0),
+    supplier_count bigint not null default 0 check (supplier_count >= 0),
+    publication_date_min date,
+    publication_date_max date,
+    complete_process_count bigint not null default 0
+        check (complete_process_count >= 0),
+    partial_process_count bigint not null default 0
+        check (partial_process_count >= 0),
+    process_without_date_count bigint not null default 0
+        check (process_without_date_count >= 0),
+    last_successful_load_at timestamptz,
+    refreshed_at timestamptz,
+    sort_order integer not null default 0,
+    unique (country_code, source_system),
+    check (
+        publication_date_min is null
+        or publication_date_max is null
+        or publication_date_min <= publication_date_max
+    )
 );
 
 -- MIRA-API interaction log. One parent row holds the question and final/raw

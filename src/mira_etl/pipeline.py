@@ -75,8 +75,13 @@ def run_pipeline(
                     records=records,
                 )
 
-            db.refresh_web_country_stats(config.country_code)
             db.finish_run(run_id, "SUCCESS")
+            db.refresh_web_coverage_source(
+                source_key=config.source,
+                country_code=config.country_code,
+                source_system=config.source_system,
+                display_name=config.source_system,
+            )
         except BaseException as exc:
             db.finish_run_after_error(run_id, str(exc) or type(exc).__name__)
             raise

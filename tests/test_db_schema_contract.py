@@ -43,6 +43,16 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         )
         self.assertNotRegex(sql, r"(?im)^\s*(alter|drop|delete|update|insert)\b")
 
+    def test_public_coverage_is_source_grain_and_outside_mart(self) -> None:
+        sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
+            encoding="utf-8"
+        )
+        body = create_table_body(sql, "web.coverage_sources") or ""
+        self.assertTrue(body)
+        for column in ("source_key", "country_code", "source_system", "status"):
+            self.assertRegex(body, rf"\b{column}\b")
+        self.assertNotIn("mart.web_country_stats", sql)
+
     def test_mart_uses_process_domain_names_without_redundant_prefixes(self) -> None:
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
             encoding="utf-8"
