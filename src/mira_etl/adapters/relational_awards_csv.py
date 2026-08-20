@@ -61,6 +61,14 @@ def build_records(
         awards: list[dict[str, Any]] = []
         seen_items: set[str] = set()
         for award_row in process_awards:
+            amount_crc = award_row.get("MONTO_ADJU_LINEA_CRC")
+            if amount_crc:
+                awarded_amount = parse_decimal(amount_crc)
+                award_currency = "CRC"
+            else:
+                awarded_amount = parse_decimal(award_row.get("MONTO_ADJU_LINEA"))
+                award_currency = award_row.get("MONEDA_ADJUDICADA") or cartel.get("TIPO_MONEDA")
+
             item_id = stable_id(
                 config.country_code, nro_sicop, award_row.get("LINEA"),
                 award_row.get("PROD_ID"), prefix=item_prefix,
@@ -87,11 +95,8 @@ def build_records(
                 "source_award_id": None,
                 "item_ids": [item_id],
                 "award_date": parse_datetime(award_row.get("FECHA_ADJUD_FIRME")),
-                "awarded_amount": parse_decimal(
-                    award_row.get("MONTO_ADJU_LINEA_CRC")
-                    or award_row.get("MONTO_ADJU_LINEA")
-                ),
-                "currency_code": award_row.get("MONEDA_ADJUDICADA") or cartel.get("TIPO_MONEDA"),
+                "awarded_amount": awarded_amount,
+                "currency_code": award_currency,
                 "suppliers": [{
                     "supplier_name": award_row.get("NOMBRE_PROVEEDOR") or proveedor.get("NOMBRE_PROVEEDOR"),
                     "supplier_id_source": supplier_source_id,

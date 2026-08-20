@@ -63,7 +63,7 @@ La normalizacion toma cada fila de `ProcedimientoAdjudicacion.csv` como una adju
 | Fechas | `award_date` | `ProcedimientoAdjudicacion.FECHA_ADJUD_FIRME` | Parseo a `timestamptz` por adjudicacion | `mart.awards.award_date` |
 | Montos | `estimated_amount` | `DetalleCarteles.MONTO_EST` | Parseo a `numeric`; si no cruza por `NRO_SICOP`, queda `NULL` | `mart.processes.estimated_amount` |
 | Montos | `awarded_amount` | `ProcedimientoAdjudicacion.MONTO_ADJU_LINEA_CRC`; fallback `ProcedimientoAdjudicacion.MONTO_ADJU_LINEA` | Parseo a `numeric` por adjudicacion | `mart.awards.awarded_amount` |
-| Montos | `currency_code` | `ProcedimientoAdjudicacion.MONEDA_ADJUDICADA` | Copia directa por adjudicacion | `mart.awards.currency_code` |
+| Montos | `currency_code` | `CRC` cuando se usa `MONTO_ADJU_LINEA_CRC`; si se usa el monto original, `ProcedimientoAdjudicacion.MONEDA_ADJUDICADA` con fallback a `DetalleCarteles.TIPO_MONEDA` | La moneda siempre corresponde al campo de monto elegido | `mart.awards.currency_code` |
 | Proveedor | `supplier_name` | `ProcedimientoAdjudicacion.NOMBRE_PROVEEDOR`; fallback `Proveedores.NOMBRE_PROVEEDOR` | Nombre normalizado y deduplicado | `mart.suppliers.name_normalised` |
 | Proveedor | `supplier_id_source` | `ProcedimientoAdjudicacion.CEDULA_PROVEEDOR` | Copia directa | `mart.suppliers.supplier_id_source` |
 | Proveedor | `supplier_tax_id` | `ProcedimientoAdjudicacion.CEDULA_PROVEEDOR` | Se usa la cedula proveedor como identificador fiscal disponible | `mart.suppliers.supplier_tax_id` |

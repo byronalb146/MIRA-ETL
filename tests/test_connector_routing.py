@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 from mira_etl.config import SourceConfig
@@ -91,6 +92,45 @@ class ConnectorRoutingTest(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["country_code"], "CR")
         self.assertTrue(records[0]["process_id"].startswith("MIRA-CR-"))
+
+    def test_costa_rica_labels_crc_converted_award_amount_as_crc(self) -> None:
+        config = SourceConfig.load(CONFIG_DIR, "costa_rica_sicop")
+        rows = {
+            "DetalleCarteles.csv": [{"NRO_SICOP": "SICOP-CRC"}],
+            "ProcedimientoAdjudicacion.csv": [{
+                "NRO_SICOP": "SICOP-CRC",
+                "LINEA": "1",
+                "MONTO_ADJU_LINEA_CRC": "3746618531",
+                "MONTO_ADJU_LINEA": "7000000",
+                "MONEDA_ADJUDICADA": "USD",
+            }],
+        }
+
+        award = transform_source(
+            config=config, period="202608", source_rows=rows
+        )[0]["awards"][0]
+
+        self.assertEqual(award["awarded_amount"], Decimal("3746618531"))
+        self.assertEqual(award["currency_code"], "CRC")
+
+    def test_costa_rica_keeps_original_currency_when_crc_amount_is_missing(self) -> None:
+        config = SourceConfig.load(CONFIG_DIR, "costa_rica_sicop")
+        rows = {
+            "DetalleCarteles.csv": [{"NRO_SICOP": "SICOP-USD"}],
+            "ProcedimientoAdjudicacion.csv": [{
+                "NRO_SICOP": "SICOP-USD",
+                "LINEA": "1",
+                "MONTO_ADJU_LINEA": "7000000",
+                "MONEDA_ADJUDICADA": "USD",
+            }],
+        }
+
+        award = transform_source(
+            config=config, period="202608", source_rows=rows
+        )[0]["awards"][0]
+
+        self.assertEqual(award["awarded_amount"], Decimal("7000000"))
+        self.assertEqual(award["currency_code"], "USD")
 
     def test_costa_rica_raw_files_match_current_mart_mapping(self) -> None:
         config = SourceConfig.load(CONFIG_DIR, "costa_rica_sicop")
