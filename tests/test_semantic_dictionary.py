@@ -38,6 +38,12 @@ class SemanticDictionaryEnumTest(unittest.TestCase):
             dictionary_column="supplier_type",
         )
 
+    def test_award_amount_relationship_is_documented(self) -> None:
+        seed = read("003_seed_base_data.sql")
+        self.assertIn("query.v_awards.process_id", seed)
+        self.assertIn("query.v_awards.awarded_amount", seed)
+        self.assertIn("No es gasto real ni monto adjudicado", seed)
+
     def assert_enum_matches(
         self,
         *,

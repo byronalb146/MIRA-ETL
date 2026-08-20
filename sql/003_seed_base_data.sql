@@ -29,7 +29,7 @@ delete from query.semantic_dictionary;
 insert into query.semantic_dictionary
     (view_name, column_name, description_es, data_type, enum_values, unit, is_aggregable, caveat)
 values
-    ('query.v_process', 'process_id', 'Identificador estable del procedimiento de contratacion.', 'text', null, null, false, null),
+    ('query.v_process', 'process_id', 'Identificador estable del procedimiento de contratacion. Une con query.v_awards.process_id para ver adjudicaciones y montos adjudicados.', 'text', null, null, false, null),
     ('query.v_process', 'country_code', 'Pais de origen del proceso (codigo ISO de dos letras).', 'text', array['CR','GT','HN','NI'], null, false, null),
     ('query.v_process', 'source_system', 'Sistema de contrataciones de origen (por ejemplo costa_rica_sicop).', 'text', null, null, false, null),
     ('query.v_process', 'data_quality_status', 'Que tan completa quedo la fila despues de normalizar el dato fuente.', 'text', array['COMPLETE','PARTIAL','INVALID','DUPLICATE'], null, false, null),
@@ -46,7 +46,7 @@ values
     ('query.v_process', 'source_status', 'Estado tal como lo escribe la fuente, antes de normalizar.', 'text', null, null, false, null),
     ('query.v_process', 'publication_date', 'Fecha de publicacion del procedimiento.', 'timestamptz', null, null, false, null),
     ('query.v_process', 'closing_date', 'Fecha de cierre de recepcion de ofertas.', 'timestamptz', null, null, false, null),
-    ('query.v_process', 'estimated_amount', 'Monto estimado antes de adjudicar, en la moneda de currency_code.', 'numeric', null, 'currency_code', true, 'Nunca sumar procesos con currency_code distinto sin convertir primero.'),
+    ('query.v_process', 'estimated_amount', 'Monto estimado antes de adjudicar, en la moneda de currency_code.', 'numeric', null, 'currency_code', true, 'No es gasto real ni monto adjudicado. Para compras, gasto o adjudicaciones usa query.v_awards.awarded_amount unido por process_id. Nunca sumar procesos con currency_code distinto sin convertir primero.'),
     ('query.v_process', 'currency_code', 'Moneda del monto estimado.', 'text', null, null, false, null),
 
     ('query.v_buyers', 'buyer_id', 'Identificador estable de la entidad compradora.', 'bigint', null, null, false, null),
@@ -74,10 +74,10 @@ values
     ('query.v_items', 'category_normalised', 'Categoria regional normalizada cuando esta disponible.', 'text', null, null, false, null),
 
     ('query.v_awards', 'award_id', 'Identificador estable de la adjudicacion.', 'text', null, null, false, null),
-    ('query.v_awards', 'process_id', 'Procedimiento al que pertenece la adjudicacion.', 'text', null, null, false, null),
+    ('query.v_awards', 'process_id', 'Procedimiento al que pertenece la adjudicacion. Une con query.v_process.process_id para filtrar por pais, titulo, descripcion, fecha de publicacion o modalidad.', 'text', null, null, false, null),
     ('query.v_awards', 'source_award_id', 'Identificador de adjudicacion publicado por la fuente.', 'text', null, null, false, null),
     ('query.v_awards', 'award_date', 'Fecha de la adjudicacion.', 'timestamptz', null, null, false, null),
-    ('query.v_awards', 'awarded_amount', 'Monto de esta adjudicacion en su moneda original.', 'numeric', null, 'currency_code', true, 'No sumar adjudicaciones con monedas diferentes sin convertirlas.'),
+    ('query.v_awards', 'awarded_amount', 'Monto de esta adjudicacion en su moneda original. Es el monto correcto para preguntas sobre compras, gasto, montos adjudicados o rankings por valor.', 'numeric', null, 'currency_code', true, 'No sumar adjudicaciones con monedas diferentes sin convertirlas.'),
     ('query.v_awards', 'currency_code', 'Moneda del monto adjudicado.', 'text', null, null, false, null),
 
     ('query.v_award_items', 'award_id', 'Adjudicacion relacionada con el articulo.', 'text', null, null, false, null),
