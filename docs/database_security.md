@@ -44,6 +44,7 @@ alter role mira_web set statement_timeout = '3s';
 alter role mira_web set default_transaction_read_only = on;
 alter role mira_web set search_path = web;
 grant usage on schema web to mira_web;
+grant select on table web.countries to mira_web;
 grant select on table web.coverage_sources to mira_web;
 ```
 
@@ -87,6 +88,7 @@ lectura de `mart.processes` debe fallar.
 Con `mira_web`:
 
 ```sql
+select * from web.countries;        -- debe funcionar
 select * from web.coverage_sources; -- debe funcionar
 select * from mart.processes;       -- debe fallar
 select * from query.v_process;      -- debe fallar
