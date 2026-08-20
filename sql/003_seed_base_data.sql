@@ -1,25 +1,32 @@
--- Column-level documentation that MIRA-API injects into the SQL-generation
--- prompt. This is the ONLY place that describes query.* columns for that
--- purpose -- MIRA-API must not hand-write a second description, because two
--- descriptions of the same column drift apart silently (see the connection
--- doc, B.1). Enum lists below are hand-copied from the CHECK constraints in
--- sql/001_init.sql; tests/test_semantic_dictionary.py
--- fails if they drift.
-create table if not exists query.semantic_dictionary (
-    id bigserial primary key,
-    view_name text not null,
-    column_name text not null,
-    description_es text not null,
-    data_type text not null,
-    enum_values text[],
-    unit text,
-    is_aggregable boolean not null default false,
-    caveat text,
-    unique (view_name, column_name)
-);
+-- Base data required by the public app. Keep this file idempotent: it should
+-- be safe to run repeatedly through `mira-etl init-db`.
+--
+-- Add stable catalog records here when they are part of the application's
+-- baseline database state rather than data extracted by a connector. Countries
+-- are the first key catalog because the UI reads them from `web.countries`.
 
--- This table is fully seeded here; remove entries for views/columns retired
--- from the query contract before inserting the current definition.
+insert into web.countries (
+    country_code,
+    display_name,
+    flag_asset,
+    status,
+    sort_order
+)
+values
+    ('GT', 'Guatemala', '/flags/gt.svg', 'PLANNED', 10),
+    ('HN', 'Honduras', '/flags/hn.svg', 'PLANNED', 20),
+    ('CR', 'Costa Rica', '/flags/cr.svg', 'PLANNED', 30),
+    ('SV', 'El Salvador', '/flags/sv.svg', 'PLANNED', 40),
+    ('NI', 'Nicaragua', '/flags/ni.svg', 'PLANNED', 50),
+    ('PA', 'Panama', '/flags/pa.svg', 'PLANNED', 60)
+on conflict (country_code) do update set
+    display_name = excluded.display_name,
+    flag_asset = excluded.flag_asset,
+    sort_order = excluded.sort_order;
+
+-- Semantic dictionary consumed by MIRA-API when building SQL-generation
+-- prompts. This seed replaces the full dictionary so retired query-contract
+-- columns do not linger.
 delete from query.semantic_dictionary;
 
 insert into query.semantic_dictionary

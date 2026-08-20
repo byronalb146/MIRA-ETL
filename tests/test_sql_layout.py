@@ -9,13 +9,13 @@ SQL_DIR = Path(__file__).parents[1] / "sql"
 
 
 class SqlLayoutTest(unittest.TestCase):
-    def test_only_three_ordered_sql_files_exist(self) -> None:
+    def test_ordered_sql_files_separate_schema_views_and_seed_data(self) -> None:
         self.assertEqual(
             sorted(path.name for path in SQL_DIR.glob("*.sql")),
             [
                 "001_init.sql",
                 "002_indexes_and_views.sql",
-                "003_semantic_dictionary.sql",
+                "003_seed_base_data.sql",
             ],
         )
 
@@ -41,12 +41,15 @@ class SqlLayoutTest(unittest.TestCase):
         self.assertNotRegex(sql, r"(?i)create\s+(?:or\s+replace\s+)?view\s+web\.")
         self.assertNotIn("web.coverage_sources", sql)
 
-    def test_dictionary_is_isolated_in_third_file(self) -> None:
-        first_two = read("001_init.sql") + read("002_indexes_and_views.sql")
-        dictionary = read("003_semantic_dictionary.sql")
-        self.assertNotIn("semantic_dictionary", first_two)
-        self.assertRegex(dictionary, r"(?i)create\s+table.*query\.semantic_dictionary")
-        self.assertRegex(dictionary, r"(?i)insert\s+into\s+query\.semantic_dictionary")
+    def test_dictionary_table_lives_in_init_and_seed_data_lives_in_seed_file(self) -> None:
+        init = read("001_init.sql")
+        views = read("002_indexes_and_views.sql")
+        seed = read("003_seed_base_data.sql")
+        self.assertRegex(init, r"(?i)create\s+table.*query\.semantic_dictionary")
+        self.assertNotIn("semantic_dictionary", views)
+        self.assertNotRegex(init, r"(?i)insert\s+into\s+query\.semantic_dictionary")
+        self.assertRegex(seed, r"(?i)insert\s+into\s+query\.semantic_dictionary")
+        self.assertRegex(seed, r"(?i)insert\s+into\s+web\.countries")
 
     def test_name_search_uses_an_immutable_unaccent_wrapper(self) -> None:
         # unaccent() is STABLE, not IMMUTABLE -- Postgres refuses to build an

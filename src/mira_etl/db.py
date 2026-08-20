@@ -81,6 +81,13 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
         "process_without_date_count", "last_successful_load_at", "refreshed_at",
         "sort_order",
     },
+    "web.countries": {
+        "country_code", "display_name", "flag_asset", "status", "sort_order",
+    },
+    "query.semantic_dictionary": {
+        "id", "view_name", "column_name", "description_es", "data_type",
+        "enum_values", "unit", "is_aggregable", "caveat",
+    },
 }
 
 CORE_SQL = """
@@ -228,7 +235,9 @@ class Database:
                 """
                 select table_schema, table_name, column_name
                   from information_schema.columns
-                 where table_schema in ('raw', 'staging', 'mart', 'audit', 'web')
+                 where table_schema in (
+                    'raw', 'staging', 'mart', 'audit', 'web', 'query', 'analytics'
+                 )
                 """
             )
             rows = cur.fetchall()

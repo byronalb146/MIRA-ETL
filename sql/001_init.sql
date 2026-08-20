@@ -195,8 +195,19 @@ create table if not exists mart.award_suppliers (
 
 -- Exact, source-grain summary consumed by fixed public API endpoints. This is
 -- deliberately outside `query`: generated SQL has no access to the `web`
--- schema. ACTIVE rows are upserted by the ETL; PLANNED rows may be registered
--- before a connector has loaded any data.
+-- schema. Countries are catalogued separately so the public UI can add planned
+-- coverage without shipping a frontend change. `flag_asset` is a public asset
+-- path such as /flags/gt.svg or an absolute CDN URL.
+create table if not exists web.countries (
+    country_code text primary key,
+    display_name text not null,
+    flag_asset text,
+    status text not null check (status in ('ACTIVE', 'PLANNED', 'INACTIVE')),
+    sort_order integer not null default 0
+);
+
+-- ACTIVE rows are upserted by the ETL; PLANNED rows may be registered before a
+-- connector has loaded any data.
 create table if not exists web.coverage_sources (
     source_key text primary key,
     country_code text not null,
@@ -223,6 +234,22 @@ create table if not exists web.coverage_sources (
         or publication_date_max is null
         or publication_date_min <= publication_date_max
     )
+);
+
+-- Column-level documentation that MIRA-API injects into the SQL-generation
+-- prompt. The seed data lives in sql/004_seed_base_data.sql with the other
+-- baseline database data.
+create table if not exists query.semantic_dictionary (
+    id bigserial primary key,
+    view_name text not null,
+    column_name text not null,
+    description_es text not null,
+    data_type text not null,
+    enum_values text[],
+    unit text,
+    is_aggregable boolean not null default false,
+    caveat text,
+    unique (view_name, column_name)
 );
 
 -- MIRA-API interaction log. One parent row holds the question and final/raw

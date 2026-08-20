@@ -47,6 +47,10 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         sql = (Path(__file__).parents[1] / "sql" / "001_init.sql").read_text(
             encoding="utf-8"
         )
+        country_body = create_table_body(sql, "web.countries") or ""
+        self.assertTrue(country_body)
+        for column in ("country_code", "display_name", "flag_asset", "status"):
+            self.assertRegex(country_body, rf"\b{column}\b")
         body = create_table_body(sql, "web.coverage_sources") or ""
         self.assertTrue(body)
         for column in ("source_key", "country_code", "source_system", "status"):
