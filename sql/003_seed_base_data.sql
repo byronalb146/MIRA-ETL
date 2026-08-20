@@ -16,9 +16,7 @@ values
     ('GT', 'Guatemala', '/flags/gt.svg', 'PLANNED', 10),
     ('HN', 'Honduras', '/flags/hn.svg', 'PLANNED', 20),
     ('CR', 'Costa Rica', '/flags/cr.svg', 'PLANNED', 30),
-    ('SV', 'El Salvador', '/flags/sv.svg', 'PLANNED', 40),
-    ('NI', 'Nicaragua', '/flags/ni.svg', 'PLANNED', 50),
-    ('PA', 'Panama', '/flags/pa.svg', 'PLANNED', 60)
+    ('NI', 'Nicaragua', '/flags/ni.svg', 'PLANNED', 50)
 on conflict (country_code) do update set
     display_name = excluded.display_name,
     flag_asset = excluded.flag_asset,
