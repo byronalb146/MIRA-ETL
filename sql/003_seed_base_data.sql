@@ -9,14 +9,13 @@ insert into web.countries (
     country_code,
     display_name,
     flag_asset,
-    status,
     sort_order
 )
 values
-    ('GT', 'Guatemala', '/flags/gt.svg', 'PLANNED', 10),
-    ('HN', 'Honduras', '/flags/hn.svg', 'PLANNED', 20),
-    ('CR', 'Costa Rica', '/flags/cr.svg', 'PLANNED', 30),
-    ('NI', 'Nicaragua', '/flags/ni.svg', 'PLANNED', 50)
+    ('GT', 'Guatemala', '/flags/gt.svg', 10),
+    ('HN', 'Honduras', '/flags/hn.svg', 20),
+    ('CR', 'Costa Rica', '/flags/cr.svg', 30),
+    ('NI', 'Nicaragua', '/flags/ni.svg', 50)
 on conflict (country_code) do update set
     display_name = excluded.display_name,
     flag_asset = excluded.flag_asset,

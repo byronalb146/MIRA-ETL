@@ -82,7 +82,7 @@ SCHEMA_CONTRACT: dict[str, set[str]] = {
         "sort_order",
     },
     "web.countries": {
-        "country_code", "display_name", "flag_asset", "status", "sort_order",
+        "country_code", "display_name", "flag_asset", "sort_order",
     },
     "query.semantic_dictionary": {
         "id", "view_name", "column_name", "description_es", "data_type",

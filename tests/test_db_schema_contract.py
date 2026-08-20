@@ -49,8 +49,9 @@ class DatabaseSchemaContractTest(unittest.TestCase):
         )
         country_body = create_table_body(sql, "web.countries") or ""
         self.assertTrue(country_body)
-        for column in ("country_code", "display_name", "flag_asset", "status"):
+        for column in ("country_code", "display_name", "flag_asset"):
             self.assertRegex(country_body, rf"\b{column}\b")
+        self.assertNotRegex(country_body, r"\bstatus\b")
         body = create_table_body(sql, "web.coverage_sources") or ""
         self.assertTrue(body)
         for column in ("source_key", "country_code", "source_system", "status"):

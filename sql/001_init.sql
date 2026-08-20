@@ -202,12 +202,12 @@ create table if not exists web.countries (
     country_code text primary key,
     display_name text not null,
     flag_asset text,
-    status text not null check (status in ('ACTIVE', 'PLANNED', 'INACTIVE')),
     sort_order integer not null default 0
 );
 
--- ACTIVE rows are upserted by the ETL; PLANNED rows may be registered before a
--- connector has loaded any data.
+-- ACTIVE rows are upserted by the ETL after a connector has loaded data.
+-- Countries without ACTIVE sources are considered PLANNED by the API when they
+-- exist in web.countries.
 create table if not exists web.coverage_sources (
     source_key text primary key,
     country_code text not null,
@@ -237,7 +237,7 @@ create table if not exists web.coverage_sources (
 );
 
 -- Column-level documentation that MIRA-API injects into the SQL-generation
--- prompt. The seed data lives in sql/004_seed_base_data.sql with the other
+-- prompt. The seed data lives in sql/003_seed_base_data.sql with the other
 -- baseline database data.
 create table if not exists query.semantic_dictionary (
     id bigserial primary key,
