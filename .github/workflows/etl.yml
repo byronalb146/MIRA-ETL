@@ -6,19 +6,41 @@ on:
       source:
         description: ETL source connector.
         required: true
+        type: choice
+        options:
+          - guatemala_guatecompras
+          - costa_rica_sicop
+          - nicaragua_siscae
         default: costa_rica_sicop
       period:
-        description: Period in AAAAMM format.
-        required: true
+        description: Period in YYYYMM format (required for Guatemala and Costa Rica).
+        required: false
+        type: string
+      force_reprocess:
+        description: Run even if the source and period already succeeded.
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: "20 7 3 * *"
+    - cron: "20 8 * * *"
 
 jobs:
-  run-etl:
+  monthly-etl:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '20 7 3 * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.source != 'nicaragua_siscae')
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        source: ${{ fromJSON(github.event_name == 'schedule' && '["guatemala_guatecompras","costa_rica_sicop"]' || format('["{0}"]', inputs.source)) }}
+    concurrency:
+      group: etl-${{ matrix.source }}
+      cancel-in-progress: false
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      MIRA_CONNECTOR_VERSION: cr-sicop-0.1.0
+      FORCE_REPROCESS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_reprocess || false }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,19 +50,14 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "value=${{ inputs.period }}" >> "$GITHUB_OUTPUT"
+            period="${{ inputs.period }}"
+            if [[ ! "$period" =~ ^[0-9]{6}$ ]]; then
+              echo "A valid YYYYMM period is required for ${{ matrix.source }}." >&2
+              exit 2
+            fi
+            echo "value=$period" >> "$GITHUB_OUTPUT"
           else
             echo "value=$(date -u -d '1 month ago' +'%Y%m')" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Set source
-        id: source
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "value=${{ inputs.source }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=costa_rica_sicop" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Python
@@ -55,4 +72,45 @@ jobs:
         run: mira-etl init-db
 
       - name: Run ETL
-        run: mira-etl run --source "${{ steps.source.outputs.value }}" --period "${{ steps.period.outputs.value }}"
+        shell: bash
+        run: |
+          args=(run --source "${{ matrix.source }}" --period "${{ steps.period.outputs.value }}")
+          if [ "$FORCE_REPROCESS" = "true" ]; then
+            args+=(--force-reprocess)
+          fi
+          mira-etl "${args[@]}"
+
+  daily-nicaragua:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '20 8 * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.source == 'nicaragua_siscae')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: etl-nicaragua_siscae
+      cancel-in-progress: false
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      FORCE_REPROCESS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_reprocess || false }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: python -m pip install -e .
+
+      - name: Init database
+        run: mira-etl init-db
+
+      - name: Run Nicaragua ETL
+        shell: bash
+        run: |
+          args=(run --source nicaragua_siscae)
+          if [ "$FORCE_REPROCESS" = "true" ]; then
+            args+=(--force-reprocess)
+          fi
+          mira-etl "${args[@]}"
