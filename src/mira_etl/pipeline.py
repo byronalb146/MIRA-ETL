@@ -23,6 +23,7 @@ def run_pipeline(
     work_dir: Path,
     local_zip: Path | None,
     limit: int | None = None,
+    force_reprocess: bool = False,
 ) -> None:
     """Run the connector selected exclusively by its source configuration."""
     validate_limit(limit)
@@ -31,6 +32,19 @@ def run_pipeline(
 
     with Database.from_env() as db:
         db.validate_schema()
+        is_current_state_source = (
+            config.download.get("type") == "html_session_scrape"
+        )
+        if (
+            not is_current_state_source
+            and not force_reprocess
+            and db.has_successful_run(source=config.source, period=period)
+        ):
+            print(
+                "SKIPPED - Period already processed successfully "
+                f"(source={config.source}, period={period})"
+            )
+            return
         run_id = db.insert_run(
             source=config.source,
             period=period,

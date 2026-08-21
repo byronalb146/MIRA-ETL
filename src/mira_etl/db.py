@@ -284,6 +284,20 @@ class Database:
         assert row is not None
         return int(row["id"])
 
+    def has_successful_run(self, *, source: str, period: str) -> bool:
+        row = self.fetch_one(
+            """
+            select 1
+              from audit.etl_runs
+             where source = %s
+               and period = %s
+               and status = 'SUCCESS'
+             limit 1
+            """,
+            (source, period),
+        )
+        return row is not None
+
     def finish_run(self, run_id: int, status: str, error_message: str | None = None) -> None:
         self.execute(
             """

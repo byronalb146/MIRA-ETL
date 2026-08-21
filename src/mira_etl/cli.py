@@ -34,6 +34,11 @@ def main() -> None:
         default=None,
         help="Cap the number of records fetched/loaded (quick smoke tests against a real database).",
     )
+    run.add_argument(
+        "--force-reprocess",
+        action="store_true",
+        help="Run even when this source and period already have a SUCCESS audit row.",
+    )
 
     subparsers.add_parser("init-db", help="Create database schemas and tables.")
 
@@ -65,6 +70,7 @@ def main() -> None:
                 work_dir=args.work_dir,
                 local_zip=args.local_zip,
                 limit=args.limit,
+                force_reprocess=args.force_reprocess,
             )
 
 
